@@ -11,6 +11,12 @@ struct WhiteSpaceView: View {
     @State private var showingCollection = false
     @State private var showingSettings = false
 
+    // Smoothed squash-and-stretch state for the player dot — updated every
+    // frame in lockstep with `engine.tick`, read (unsmoothed math kept out of
+    // `draw`) by `DotRenderer.drawPlayer`.
+    @State private var stretchAmount: Double = 0
+    @State private var stretchAngleRadians: Double = 0
+
     var body: some View {
         GeometryReader { geo in
             let screenSize = geo.size
@@ -22,6 +28,7 @@ struct WhiteSpaceView: View {
                     let dt = newDate.timeIntervalSince(lastTick)
                     lastTick = newDate
                     engine.tick(dt: dt)
+                    updateStretch(dt: dt)
                 }
             }
             .background(WorldBackground.whiteSpace.background)
@@ -46,6 +53,7 @@ struct WhiteSpaceView: View {
     private func draw(context: inout GraphicsContext, size: CGSize, screenSize: CGSize) {
         let camera = CGPoint(x: player.position.x - screenSize.width / 2,
                               y: player.position.y - screenSize.height / 2)
+        let t = Date().timeIntervalSinceReferenceDate
 
         func toScreen(_ world: CGPoint) -> CGPoint {
             CGPoint(x: world.x - camera.x, y: world.y - camera.y)
@@ -90,11 +98,75 @@ struct WhiteSpaceView: View {
             context.draw(Text(c.definition.icon).font(.system(size: 16)), at: p)
         }
 
+        // Absorb "liquid" effects — a small blob of the eaten collectible's
+        // color traveling from where it was eaten toward the (moving) player,
+        // fading out as it merges in. Drawn before the player/aura so the
+        // merge reads as flowing *into* the dot.
+        for effect in engine.absorbEffects {
+            let elapsed = Date().timeIntervalSince(effect.startedAt)
+            let progress = min(1, max(0, elapsed / AbsorbEffect.duration))
+            let eased = 1 - pow(1 - progress, 3)
+            let worldPos = CGPoint(
+                x: effect.startPosition.x + (player.position.x - effect.startPosition.x) * CGFloat(eased),
+                y: effect.startPosition.y + (player.position.y - effect.startPosition.y) * CGFloat(eased)
+            )
+            let p = toScreen(worldPos)
+            guard isOnScreen(p, size: screenSize, margin: 60) else { continue }
+
+            let dx = Double(player.position.x - effect.startPosition.x)
+            let dy = Double(player.position.y - effect.startPosition.y)
+            let travelAngle = Angle(radians: dx == 0 && dy == 0 ? 0 : atan2(dy, dx))
+            let shrink: CGFloat = 1 - 0.35 * CGFloat(progress)
+            let fade = 1 - pow(progress, 4)
+
+            var dropContext = context
+            dropContext.opacity = max(0, fade)
+            dropContext.translateBy(x: p.x, y: p.y)
+            dropContext.rotate(by: travelAngle)
+            let dropRadius: CGFloat = 8 * shrink
+            let dropRect = CGRect(x: -dropRadius, y: -dropRadius * 0.75, width: dropRadius * 2.2, height: dropRadius * 1.5)
+            dropContext.fill(Path(ellipseIn: dropRect), with: .color(effect.color.color))
+        }
+
         // Player dot, always screen-centered.
         let playerScreenPos = toScreen(player.position)
         let formColor = player.activeForm?.primaryColor.color
         let color = DotRenderer.blendedPlayerColor(formColor: formColor, progress: player.activeFormProgress)
-        DotRenderer.draw(context, center: playerScreenPos, radius: player.size, color: color)
+
+        // A soft pulsing aura tinted toward the player's current color, so
+        // White Space feels a little more alive than one flat static sheet.
+        let auraPulse = 1.0 + 0.12 * sin(t * 1.6)
+        let auraRadius = (player.size + 34) * CGFloat(auraPulse)
+        context.fill(
+            Path(ellipseIn: CGRect(x: playerScreenPos.x - auraRadius, y: playerScreenPos.y - auraRadius,
+                                    width: auraRadius * 2, height: auraRadius * 2)),
+            with: .color((formColor ?? .blue).opacity(0.06))
+        )
+
+        // A brief bright burst right as an absorb effect finishes merging in —
+        // sells "adding up color and power" on arrival.
+        if engine.absorbEffects.contains(where: { Date().timeIntervalSince($0.startedAt) / AbsorbEffect.duration > 0.82 }) {
+            let burstRadius = player.size + 10
+            context.stroke(
+                Path(ellipseIn: CGRect(x: playerScreenPos.x - burstRadius, y: playerScreenPos.y - burstRadius,
+                                        width: burstRadius * 2, height: burstRadius * 2)),
+                with: .color(color.opacity(0.5)), lineWidth: 3
+            )
+        }
+
+        let moveMagnitude = sqrt(Double(engine.moveInput.dx) * Double(engine.moveInput.dx)
+                                  + Double(engine.moveInput.dy) * Double(engine.moveInput.dy))
+        let lookDirection: CGVector
+        if moveMagnitude > 0.05 {
+            lookDirection = engine.moveInput
+        } else {
+            // Idle: a slow, gentle glance up and down instead of a dead stare.
+            lookDirection = CGVector(dx: 0, dy: CGFloat(sin(t * 0.6) * 0.6))
+        }
+
+        DotRenderer.drawPlayer(context, center: playerScreenPos, radius: player.size, color: color,
+                                stretch: CGFloat(stretchAmount), angle: Angle(radians: stretchAngleRadians),
+                                lookDirection: lookDirection, time: t)
 
         if player.abilityEffectRemaining > 0 {
             let r = player.size + 6
@@ -110,6 +182,27 @@ struct WhiteSpaceView: View {
 
     private func isOnScreen(_ p: CGPoint, size: CGSize, margin: CGFloat) -> Bool {
         p.x > -margin && p.x < size.width + margin && p.y > -margin && p.y < size.height + margin
+    }
+
+    /// Smoothly tracks how "stretched" the player dot should look (0 = at
+    /// rest, 1 = fully stretched along the direction of travel), so motion
+    /// reads as a bit of a liquid squash-and-stretch instead of a rigid
+    /// circle snapping to speed. Runs once per frame, right alongside
+    /// `engine.tick`.
+    private func updateStretch(dt: Double) {
+        guard dt > 0, dt < 1 else { return }
+        let dx = Double(engine.moveInput.dx)
+        let dy = Double(engine.moveInput.dy)
+        let magnitude = min(1, sqrt(dx * dx + dy * dy))
+        let smoothing = min(1, dt * 10)
+        stretchAmount += (magnitude - stretchAmount) * smoothing
+
+        guard magnitude > 0.05 else { return }
+        let targetAngle = atan2(dy, dx)
+        var delta = targetAngle - stretchAngleRadians
+        while delta > .pi { delta -= 2 * .pi }
+        while delta < -.pi { delta += 2 * .pi }
+        stretchAngleRadians += delta * smoothing
     }
 
     // MARK: - Movement input (drag anywhere, §42 Option A)

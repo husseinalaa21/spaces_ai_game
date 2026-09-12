@@ -28,6 +28,89 @@ enum DotRenderer {
         }
     }
 
+    /// Draws the player specifically: a squash-and-stretch deformed body (so
+    /// motion reads as a bit more liquid/organic than a rigid circle sliding
+    /// around) plus a simple pair of eyes that blink and glance toward
+    /// wherever the player is heading. Collectibles/wanderers keep using the
+    /// plain `draw` above — only the player gets this treatment, per §82's
+    /// rule that the player is still obviously "a dot", just a lively one.
+    ///
+    /// - stretch: 0 (at rest, perfect circle) ... 1 (fully stretched along `angle`).
+    /// - angle: current heading, only used while `stretch` > 0.
+    /// - lookDirection: -1...1 per axis; where the pupils glance.
+    /// - time: `Date().timeIntervalSinceReferenceDate`, drives the blink cycle.
+    static func drawPlayer(_ context: GraphicsContext, center: CGPoint, radius: CGFloat, color: Color,
+                            stretch: CGFloat, angle: Angle, lookDirection: CGVector, time: Double) {
+        let clampedStretch = min(1, max(0, stretch))
+
+        var bodyContext = context
+        bodyContext.translateBy(x: center.x, y: center.y)
+        bodyContext.rotate(by: angle)
+
+        let halfWidth = radius * (1 + clampedStretch * 0.5)
+        let halfHeight = radius * (1 - clampedStretch * 0.28)
+        let bodyRect = CGRect(x: -halfWidth, y: -halfHeight, width: halfWidth * 2, height: halfHeight * 2)
+        bodyContext.fill(Path(ellipseIn: bodyRect), with: .color(color))
+
+        // Highlight stays sun-from-top-right relative to the (possibly
+        // rotated) body, same light direction as every other dot.
+        let highlightRadius = min(halfWidth, halfHeight) * 0.5
+        let highlightCenter = CGPoint(x: halfWidth * 0.35, y: -halfHeight * 0.35)
+        var highlightContext = bodyContext
+        highlightContext.opacity = 0.35
+        highlightContext.fill(
+            Path(ellipseIn: CGRect(x: highlightCenter.x - highlightRadius, y: highlightCenter.y - highlightRadius,
+                                    width: highlightRadius * 2, height: highlightRadius * 2)),
+            with: .color(.white)
+        )
+
+        // Eyes are drawn in the ORIGINAL (unrotated) frame, centered on the
+        // dot, so they always stay upright and just glance around instead of
+        // tilting sideways whenever the body stretches/rotates with motion.
+        drawEyes(context, center: center, radius: radius, lookDirection: lookDirection, time: time)
+    }
+
+    private static func drawEyes(_ context: GraphicsContext, center: CGPoint, radius: CGFloat,
+                                  lookDirection: CGVector, time: Double) {
+        let eyeSpacing = radius * 0.5
+        let eyeRadius = radius * 0.26
+        let pupilRadius = eyeRadius * 0.55
+        let openAmount = blinkOpenAmount(time)
+        let eyeY = center.y - radius * 0.08
+        let sides: [CGFloat] = [-1, 1]
+
+        for side in sides {
+            let eyeCenter = CGPoint(x: center.x + side * eyeSpacing, y: eyeY)
+            let scleraHalfHeight = max(eyeRadius * 0.12, eyeRadius * CGFloat(openAmount))
+            let scleraRect = CGRect(x: eyeCenter.x - eyeRadius, y: eyeCenter.y - scleraHalfHeight,
+                                     width: eyeRadius * 2, height: scleraHalfHeight * 2)
+            context.fill(Path(ellipseIn: scleraRect), with: .color(.white))
+
+            guard openAmount > 0.3 else { continue }
+            let maxOffset = eyeRadius - pupilRadius
+            let pupilCenter = CGPoint(
+                x: eyeCenter.x + lookDirection.dx * maxOffset * 0.6,
+                y: eyeCenter.y + lookDirection.dy * maxOffset * 0.6 * CGFloat(openAmount)
+            )
+            let pupilVisibleRadius = pupilRadius * CGFloat(openAmount)
+            context.fill(
+                Path(ellipseIn: CGRect(x: pupilCenter.x - pupilVisibleRadius, y: pupilCenter.y - pupilVisibleRadius,
+                                        width: pupilVisibleRadius * 2, height: pupilVisibleRadius * 2)),
+                with: .color(.black)
+            )
+        }
+    }
+
+    /// 1 = fully open, dipping to 0 for a brief moment once per cycle — a
+    /// simple periodic blink rather than anything eye-tracking-accurate.
+    private static func blinkOpenAmount(_ time: Double) -> Double {
+        let period = 3.4
+        let blinkDuration = 0.18
+        let phase = time.truncatingRemainder(dividingBy: period)
+        guard phase < blinkDuration else { return 1 }
+        return 1 - sin(.pi * phase / blinkDuration)
+    }
+
     /// Blends the neutral base dot color toward a form's color as progress climbs,
     /// per §5's "visual transformation" ladder (0% neutral → 100% full color).
     static func blendedPlayerColor(base: Color = Color(white: 0.16), formColor: Color?, progress: Double) -> Color {

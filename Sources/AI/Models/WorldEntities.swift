@@ -30,3 +30,17 @@ struct SignalEvent: Identifiable {
     var expiresAt: Date
     var claimed: Bool = false
 }
+
+/// A brief "liquid" travel effect from an eaten collectible's last position
+/// toward the player, so absorbing something visibly flows its color and
+/// power into the player dot instead of just vanishing instantly. Purely
+/// cosmetic/local — `WhiteSpaceView` animates and discards these; nothing
+/// about the actual absorb logic (`TransformationEngine`) depends on them.
+struct AbsorbEffect: Identifiable {
+    let id: UUID = UUID()
+    let startPosition: CGPoint
+    let color: RGBColor
+    let startedAt: Date = Date()
+
+    static let duration: Double = 0.5
+}

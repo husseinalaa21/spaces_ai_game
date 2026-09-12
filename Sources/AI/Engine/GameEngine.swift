@@ -25,6 +25,7 @@ final class GameEngine: ObservableObject {
     @Published var wanderers: [AmbientWanderer] = []
     @Published var activeSignal: SignalEvent? = nil
     @Published var signalBannerText: String? = nil
+    @Published var absorbEffects: [AbsorbEffect] = []
 
     /// Normalized -1...1 drag vector from the on-screen joystick/drag control.
     var moveInput: CGVector = .zero
@@ -59,6 +60,13 @@ final class GameEngine: ObservableObject {
         checkCollisions()
         handleSpawning(dt: dt)
         handleSignals(dt: dt)
+        cleanUpAbsorbEffects()
+    }
+
+    private func cleanUpAbsorbEffects() {
+        guard !absorbEffects.isEmpty else { return }
+        let now = Date()
+        absorbEffects.removeAll { now.timeIntervalSince($0.startedAt) > AbsorbEffect.duration }
     }
 
     private func updateMovement(dt: Double) {
@@ -142,11 +150,17 @@ final class GameEngine: ObservableObject {
 
         if let idx = eatenIndex {
             let eaten = collectibles.remove(at: idx)
-            absorb(eaten.definition)
+            absorb(eaten.definition, from: eaten.position)
         }
     }
 
-    private func absorb(_ definition: CollectibleDefinition) {
+    private func absorb(_ definition: CollectibleDefinition, from position: CGPoint) {
+        // Kick off the "liquid" travel effect first so it starts exactly at
+        // the collectible's last position, then run the actual (instant)
+        // progress/completion math — the effect is purely cosmetic and never
+        // gates the real absorb logic.
+        absorbEffects.append(AbsorbEffect(startPosition: position, color: definition.primaryColor))
+
         let result = TransformationEngine.absorb(definition, into: player.profile)
         player.profile = result.profile
         player.lastEatenID = definition.id

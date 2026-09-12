@@ -29,9 +29,22 @@ enum WorldBackground {
     static let cellSize: CGFloat = 60
     static let lineWidth: CGFloat = 1.2
 
+    /// Faint subdivisions inside each main cell — purely decorative texture
+    /// so the world reads as a bit more alive/dynamic than one flat sheet.
+    static let fineDivisions = 3
+    static let fineLineWidth: CGFloat = 0.6
+
     static func draw(_ context: GraphicsContext, screenSize: CGSize, cameraOffset: CGPoint, palette: Palette) {
         context.fill(Path(CGRect(origin: .zero, size: screenSize)), with: .color(palette.background))
 
+        drawGrid(context, screenSize: screenSize, cameraOffset: cameraOffset,
+                  cellSize: cellSize / CGFloat(fineDivisions), color: palette.line.opacity(0.35), lineWidth: fineLineWidth)
+        drawGrid(context, screenSize: screenSize, cameraOffset: cameraOffset,
+                  cellSize: cellSize, color: palette.line, lineWidth: lineWidth)
+    }
+
+    private static func drawGrid(_ context: GraphicsContext, screenSize: CGSize, cameraOffset: CGPoint,
+                                  cellSize: CGFloat, color: Color, lineWidth: CGFloat) {
         let startX = (cameraOffset.x / cellSize).rounded(.down) * cellSize
         let startY = (cameraOffset.y / cellSize).rounded(.down) * cellSize
 
@@ -50,6 +63,6 @@ enum WorldBackground {
             path.addLine(to: CGPoint(x: screenSize.width, y: sy))
             y += cellSize
         }
-        context.stroke(path, with: .color(palette.line), lineWidth: lineWidth)
+        context.stroke(path, with: .color(color), lineWidth: lineWidth)
     }
 }

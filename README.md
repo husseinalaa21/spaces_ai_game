@@ -24,9 +24,18 @@ locally-generated project. See "What's next" below.
   level (`AI.entitlements`) for whenever that button comes back — see "Sign
   in with Apple setup" below.
 - A window-pane grid background (the same light gray lines as the app's dot
-  logo) fills White Space, anchored to world space so it scrolls with you
-  instead of sitting fixed on screen.
-- A dot (you), in a huge white world, moved by dragging anywhere on screen.
+  logo, plus a faint finer subdivision for texture) fills White Space,
+  anchored to world space so it scrolls with you instead of sitting fixed on
+  screen, with a soft pulsing aura around your dot tinted toward whatever
+  you're becoming.
+- A dot (you), in a huge white world, moved by dragging anywhere on screen —
+  it squashes and stretches toward your direction of travel instead of
+  sliding as a rigid circle, and has two simple eyes that blink and glance
+  around (toward your heading while moving, a slow up/down glance while
+  idle).
+- Eating something plays a brief "liquid" travel effect — a droplet of the
+  collectible's color flows from where it was eaten into your dot, with a
+  soft burst on arrival — instead of the collectible just vanishing.
 - ~30 emoji-based collectibles across 8 categories (food, nature, body, tech,
   space, emotion, animal, objects), each with its own rarity and color.
 - Eating something raises that form's completion % (visible in the top-left
