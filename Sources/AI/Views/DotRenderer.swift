@@ -28,6 +28,14 @@ enum DotRenderer {
         }
     }
 
+    /// Whether the eyes show a black pupil (the in-game player, so it can
+    /// visibly glance around) or stay plain white ovals (the main menu's
+    /// preview dot, matching the app's own logo's clean blue dot).
+    enum EyeStyle: Equatable {
+        case withPupil
+        case whiteOnly
+    }
+
     /// Draws the player specifically: a squash-and-stretch deformed body (so
     /// motion reads as a bit more liquid/organic than a rigid circle sliding
     /// around) plus a simple pair of eyes that blink and glance toward
@@ -37,10 +45,11 @@ enum DotRenderer {
     ///
     /// - stretch: 0 (at rest, perfect circle) ... 1 (fully stretched along `angle`).
     /// - angle: current heading, only used while `stretch` > 0.
-    /// - lookDirection: -1...1 per axis; where the pupils glance.
+    /// - lookDirection: -1...1 per axis; where the pupils glance (ignored for `.whiteOnly`).
     /// - time: `Date().timeIntervalSinceReferenceDate`, drives the blink cycle.
     static func drawPlayer(_ context: GraphicsContext, center: CGPoint, radius: CGFloat, color: Color,
-                            stretch: CGFloat, angle: Angle, lookDirection: CGVector, time: Double) {
+                            stretch: CGFloat, angle: Angle, lookDirection: CGVector, time: Double,
+                            eyeStyle: EyeStyle = .withPupil) {
         let clampedStretch = min(1, max(0, stretch))
 
         var bodyContext = context
@@ -67,11 +76,11 @@ enum DotRenderer {
         // Eyes are drawn in the ORIGINAL (unrotated) frame, centered on the
         // dot, so they always stay upright and just glance around instead of
         // tilting sideways whenever the body stretches/rotates with motion.
-        drawEyes(context, center: center, radius: radius, lookDirection: lookDirection, time: time)
+        drawEyes(context, center: center, radius: radius, lookDirection: lookDirection, time: time, style: eyeStyle)
     }
 
     private static func drawEyes(_ context: GraphicsContext, center: CGPoint, radius: CGFloat,
-                                  lookDirection: CGVector, time: Double) {
+                                  lookDirection: CGVector, time: Double, style: EyeStyle) {
         let eyeSpacing = radius * 0.5
         let eyeRadius = radius * 0.26
         let pupilRadius = eyeRadius * 0.55
@@ -86,7 +95,7 @@ enum DotRenderer {
                                      width: eyeRadius * 2, height: scleraHalfHeight * 2)
             context.fill(Path(ellipseIn: scleraRect), with: .color(.white))
 
-            guard openAmount > 0.3 else { continue }
+            guard style == .withPupil, openAmount > 0.3 else { continue }
             let maxOffset = eyeRadius - pupilRadius
             let pupilCenter = CGPoint(
                 x: eyeCenter.x + lookDirection.dx * maxOffset * 0.6,
