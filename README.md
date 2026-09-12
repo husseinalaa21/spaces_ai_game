@@ -23,6 +23,16 @@ locally-generated project. See "What's next" below.
   yet; the "Sign in with Apple" capability is still wired up at the project
   level (`AI.entitlements`) for whenever that button comes back — see "Sign
   in with Apple setup" below.
+- **Main menu**: after signing in you land on a menu with a few small
+  animated preview cards (the blue dot's squash-and-stretch body + eyes,
+  self-animating) and a single **Play** button — White Space itself only
+  starts once you tap it.
+- **A White Space round is timed**: 15 minutes per session (countdown badge
+  at the bottom; assumed 15 *minutes* — easy to change to seconds if that's
+  not what was meant, see `GameEngine.roundDuration`), a minimap (top-right)
+  showing your position and nearby collectibles against the whole world, and
+  a quit button (top-left) back to the main menu. Time running out shows a
+  brief "TIME'S UP" banner and returns you to the menu automatically.
 - A window-pane grid background (the same light gray lines as the app's dot
   logo, plus a faint finer subdivision for texture) fills White Space,
   anchored to world space so it scrolls with you instead of sitting fixed on
@@ -72,7 +82,8 @@ Sources/AI/
   Engine/        TransformationEngine.swift (absorb → progress → completion, pure logic),
                  GameEngine.swift (movement, spawning, collisions, abilities — the sim loop)
   Persistence/   SaveManager.swift (local JSON save/load; swap for a backend later)
-  Views/         SplashView, SignInView, WhiteSpaceView (the game screen/canvas),
+  Views/         SplashView, SignInView, MainMenuView (Play + preview cards),
+                 WhiteSpaceView (the game screen/canvas),
                  WorldBackground (shared grid renderer, White/Dark Space palettes),
                  CollectionView, SettingsView, OnboardingView, DotRenderer (shared dot style)
   Utilities/     HapticsManager, AudioManager (silent no-op until real audio files are added)

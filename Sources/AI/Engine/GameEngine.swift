@@ -15,9 +15,13 @@ import UIKit
 final class GameEngine: ObservableObject {
     // MARK: World configuration
     static let worldSize: CGFloat = 4000
-    static let maxCollectibles = 42
-    static let maxWanderers = 6
+    static let maxCollectibles = 160
+    static let maxWanderers = 14
     static let baseSpeed: CGFloat = 130   // points/sec at radius = baseRadius
+
+    /// Length of one White Space play session, started fresh each time the
+    /// player taps Play on the main menu.
+    static let roundDuration: Double = 15 * 60
 
     let player: PlayerState
 
@@ -26,6 +30,8 @@ final class GameEngine: ObservableObject {
     @Published var activeSignal: SignalEvent? = nil
     @Published var signalBannerText: String? = nil
     @Published var absorbEffects: [AbsorbEffect] = []
+    @Published var timeRemaining: Double = GameEngine.roundDuration
+    @Published var roundExpired: Bool = false
 
     /// Normalized -1...1 drag vector from the on-screen joystick/drag control.
     var moveInput: CGVector = .zero
@@ -42,12 +48,19 @@ final class GameEngine: ObservableObject {
     }
 
     private func seedInitialWorld() {
-        for _ in 0..<24 {
+        for _ in 0..<100 {
             spawnCollectible()
         }
         for _ in 0..<GameEngine.maxWanderers {
             wanderers.append(makeWanderer())
         }
+    }
+
+    /// Resets the round clock and lets the world start fresh — called each
+    /// time the player taps Play on the main menu (§ new home screen flow).
+    func startRound() {
+        timeRemaining = GameEngine.roundDuration
+        roundExpired = false
     }
 
     // MARK: - Frame update
@@ -61,6 +74,15 @@ final class GameEngine: ObservableObject {
         handleSpawning(dt: dt)
         handleSignals(dt: dt)
         cleanUpAbsorbEffects()
+        updateRoundTimer(dt: dt)
+    }
+
+    private func updateRoundTimer(dt: Double) {
+        guard timeRemaining > 0 else { return }
+        timeRemaining = max(0, timeRemaining - dt)
+        if timeRemaining == 0 {
+            roundExpired = true
+        }
     }
 
     private func cleanUpAbsorbEffects() {

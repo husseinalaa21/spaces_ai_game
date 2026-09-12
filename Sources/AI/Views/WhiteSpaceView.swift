@@ -6,6 +6,9 @@ import SwiftUI
 struct WhiteSpaceView: View {
     @ObservedObject var engine: GameEngine
     @ObservedObject var player: PlayerState
+    /// Returns to the main menu — the quit button, and automatically once
+    /// the round timer runs out.
+    let onQuit: () -> Void
     @State private var dragStart: CGPoint? = nil
     @State private var lastTick: Date = Date()
     @State private var showingCollection = false
@@ -35,8 +38,12 @@ struct WhiteSpaceView: View {
             .contentShape(Rectangle())
             .gesture(dragGesture(screenSize: screenSize))
             .overlay(alignment: .top) { hud }
+            .overlay(alignment: .topLeading) { quitButton }
+            .overlay(alignment: .topTrailing) { minimap }
+            .overlay(alignment: .bottom) { timerBadge }
             .overlay(alignment: .bottom) { controls }
             .overlay { formCompleteOverlay }
+            .overlay { roundExpiredOverlay }
             .overlay(alignment: .top) { signalBanner }
         }
         .ignoresSafeArea()
@@ -284,6 +291,81 @@ struct WhiteSpaceView: View {
             .padding(.trailing, 20)
             .padding(.bottom, 28)
         }
+    }
+
+    // MARK: - Quit / minimap / timer
+
+    private var quitButton: some View {
+        roundIconButton(system: "xmark") { onQuit() }
+            .padding(.top, 54)
+            .padding(.leading, 16)
+    }
+
+    private var minimap: some View {
+        let mapSize: CGFloat = 84
+        return ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.ultraThinMaterial)
+            Canvas { context, size in
+                let worldSize = GameEngine.worldSize
+                func toMap(_ p: CGPoint) -> CGPoint {
+                    CGPoint(x: p.x / worldSize * size.width, y: p.y / worldSize * size.height)
+                }
+                for c in engine.collectibles {
+                    let p = toMap(c.position)
+                    context.fill(Path(ellipseIn: CGRect(x: p.x - 1, y: p.y - 1, width: 2, height: 2)),
+                                 with: .color(.black.opacity(0.35)))
+                }
+                let playerDot = toMap(player.position)
+                let r: CGFloat = 4
+                context.fill(Path(ellipseIn: CGRect(x: playerDot.x - r, y: playerDot.y - r, width: r * 2, height: r * 2)),
+                             with: .color(.blue))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.black.opacity(0.12), lineWidth: 1)
+        }
+        .frame(width: mapSize, height: mapSize)
+        .padding(.top, 54)
+        .padding(.trailing, 16)
+    }
+
+    private var timerBadge: some View {
+        Text(timeString(engine.timeRemaining))
+            .font(.system(size: 15, weight: .bold, design: .rounded))
+            .monospacedDigit()
+            .foregroundColor(engine.timeRemaining < 30 ? .red : .black.opacity(0.75))
+            .padding(.horizontal, 14).padding(.vertical, 7)
+            .background(.ultraThinMaterial, in: Capsule())
+            .padding(.bottom, 106)
+    }
+
+    private func timeString(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+
+    private var roundExpiredOverlay: some View {
+        Group {
+            if engine.roundExpired {
+                VStack(spacing: 6) {
+                    Text("⏱️").font(.system(size: 40))
+                    Text("TIME'S UP")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                }
+                .padding(20)
+                .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 18))
+                .foregroundColor(.white)
+                .transition(.scale.combined(with: .opacity))
+                .onAppear {
+                    HapticsManager.shared.impact(.medium)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                        onQuit()
+                    }
+                }
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: engine.roundExpired)
     }
 
     private func roundIconButton(system: String, action: @escaping () -> Void) -> some View {

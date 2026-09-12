@@ -2,16 +2,17 @@ import SwiftUI
 import UIKit
 
 /// Top-level app flow: splash (loading, shaking dots) → sign in with Apple
-/// (if no signed-in player yet) → onboarding/game. This is also where a
-/// title/menu screen or Dark Space portal transition would slot in later
-/// (§63) without changing how `AIApp` is wired up.
+/// (if no signed-in player yet) → main menu (Play button + animated preview
+/// cards) → onboarding/game, only actually entering White Space once the
+/// player taps Play. This is also where a Dark Space portal transition
+/// would slot in later (§63) without changing how `AIApp` is wired up.
 struct RootView: View {
     @StateObject private var player: PlayerState
     @StateObject private var engine: GameEngine
     @StateObject private var authState = AuthState()
     private let saveManager: SaveManager
 
-    private enum Phase { case splash, signIn, main }
+    private enum Phase { case splash, signIn, home, playing }
     @State private var phase: Phase = .splash
 
     init() {
@@ -29,17 +30,25 @@ struct RootView: View {
             case .splash:
                 SplashView {
                     authState.refreshCredentialState()
-                    phase = authState.isSignedIn ? .main : .signIn
+                    phase = authState.isSignedIn ? .home : .signIn
                 }
 
             case .signIn:
                 SignInView(authState: authState) {
-                    withAnimation { phase = .main }
+                    withAnimation { phase = .home }
                 }
 
-            case .main:
+            case .home:
+                MainMenuView {
+                    engine.startRound()
+                    withAnimation { phase = .playing }
+                }
+
+            case .playing:
                 if player.profile.hasCompletedOnboarding {
-                    WhiteSpaceView(engine: engine, player: player)
+                    WhiteSpaceView(engine: engine, player: player, onQuit: {
+                        withAnimation { phase = .home }
+                    })
                 } else {
                     OnboardingView {
                         player.profile.hasCompletedOnboarding = true
@@ -53,7 +62,7 @@ struct RootView: View {
         .onChange(of: authState.isSignedIn) { signedIn in
             // Handles the rare case where Apple reports the credential was
             // revoked after we'd already let the player into the game.
-            if phase == .main && !signedIn {
+            if (phase == .home || phase == .playing) && !signedIn {
                 phase = .signIn
             }
         }
