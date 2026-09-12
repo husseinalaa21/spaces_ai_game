@@ -1,4 +1,4 @@
-# AI — Eat. Change. Evolve.
+# Spaces - AI Game — Eat. Change. Evolve.
 
 A minimalist iOS game: you are always a dot. Explore a huge white space, eat
 icon-based collectibles, transform gradually toward whatever you eat most,
@@ -13,11 +13,16 @@ locally-generated project. See "What's next" below.
 
 ## What's actually playable right now
 
-- **Launch flow**: a splash screen with the logo's dots gently shaking in
-  place and "Powered by Spacechat" pinned at the bottom while it loads, then
-  either straight into the game (if already signed in) or a Sign in with
-  Apple screen (small dots up top, a single white Apple sign-in button
-  center stage) — see "Sign in with Apple setup" below.
+- **Launch flow**: a splash screen redrawing the Vision 1 logo's dot cluster
+  (same layout/colors as `assets/logo.png`, minus the grid) with each dot
+  jittering independently on its own timing, "Powered by Spacechat" pinned
+  at the bottom, then either straight into the game (if already signed in)
+  or a "Spaces - AI Game" screen with small dots up top and a plain white
+  **Continue** button — a temporary stand-in for a real Sign in with Apple
+  button so the app is fully testable without a paid Apple Developer account
+  yet; the "Sign in with Apple" capability is still wired up at the project
+  level (`AI.entitlements`) for whenever that button comes back — see "Sign
+  in with Apple setup" below.
 - A window-pane grid background (the same light gray lines as the app's dot
   logo) fills White Space, anchored to world space so it scrolls with you
   instead of sitting fixed on screen.
@@ -62,7 +67,8 @@ Sources/AI/
                  WorldBackground (shared grid renderer, White/Dark Space palettes),
                  CollectionView, SettingsView, OnboardingView, DotRenderer (shared dot style)
   Utilities/     HapticsManager, AudioManager (silent no-op until real audio files are added)
-  Resources/     Assets.xcassets (AppIcon — single dot per §110 — and AccentColor)
+  Resources/     Assets.xcassets (AppIcon — single dot per §110 — AccentColor, and
+                 Logo — the real Vision 2 logo, used by SplashView)
 AI.entitlements  Sign in with Apple capability (repo root, referenced by project.yml)
 ```
 
@@ -96,10 +102,14 @@ the `Assets.xcassets` you drag in replaces the default one.
 
 ## Sign in with Apple setup
 
-The sign-in screen uses Apple's real `SignInWithAppleButton`, which needs the
-"Sign in with Apple" capability — already wired up via `AI.entitlements` and
-`CODE_SIGN_ENTITLEMENTS` in `project.yml`, so `xcodegen generate` sets it up
-automatically. A few things worth knowing:
+The sign-in screen currently shows a plain **Continue** button
+(`AuthState.completeTestSignIn()`) instead of Apple's real
+`SignInWithAppleButton`, so the whole app is testable without a paid Apple
+Developer account. The "Sign in with Apple" capability is still wired up at
+the project level — `AI.entitlements` plus `CODE_SIGN_ENTITLEMENTS` in
+`project.yml`, so `xcodegen generate` sets it up automatically — ready for
+whenever `SignInView` swaps back to the real button. A few things worth
+knowing about that real button, for when it's back:
 
 - **In the Simulator**: this just works with automatic signing, as long as
   Xcode is signed in with your own Apple ID (Xcode → Settings → Accounts).

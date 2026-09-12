@@ -17,6 +17,12 @@ final class AuthState: ObservableObject {
     private let nameKey = "ai_display_name"
     private let defaults = UserDefaults.standard
 
+    /// Sentinel stored instead of a real Apple user identifier when the
+    /// player comes in through the test "Continue" button (see
+    /// `completeTestSignIn`). Never a value Apple would issue, so it's safe
+    /// to special-case.
+    private let testUserID = "local-test-user"
+
     init() {
         isSignedIn = defaults.string(forKey: userIDKey) != nil
         displayName = defaults.string(forKey: nameKey)
@@ -34,6 +40,16 @@ final class AuthState: ObservableObject {
         isSignedIn = true
     }
 
+    /// Placeholder sign-in for the "Continue" button used while there's no
+    /// real Apple Developer / backend setup to test against. Swap this back
+    /// to the real Sign in with Apple button once that's in place — nothing
+    /// else in `RootView` needs to change, it only ever looks at
+    /// `isSignedIn`.
+    func completeTestSignIn() {
+        defaults.set(testUserID, forKey: userIDKey)
+        isSignedIn = true
+    }
+
     func signOut() {
         defaults.removeObject(forKey: userIDKey)
         defaults.removeObject(forKey: nameKey)
@@ -45,7 +61,7 @@ final class AuthState: ObservableObject {
     /// revoked "AI"'s access from their Apple ID settings since we last saw
     /// them. Cheap to call once at launch; silently no-ops if never signed in.
     func refreshCredentialState() {
-        guard let userID = defaults.string(forKey: userIDKey) else { return }
+        guard let userID = defaults.string(forKey: userIDKey), userID != testUserID else { return }
         ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { [weak self] state, _ in
             guard state != .authorized else { return }
             Task { @MainActor in

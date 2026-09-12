@@ -1,10 +1,17 @@
 import SwiftUI
-import AuthenticationServices
 
 /// Shown after the splash screen when there's no signed-in player yet (§76).
 /// A small row of dots up top for continuity with the app's own logo/splash,
-/// and a single white "Sign in with Apple" button front and center — nothing
-/// else competing for attention.
+/// and a single white button front and center — nothing else competing for
+/// attention.
+///
+/// NOTE: this currently shows a plain "Continue" button instead of the real
+/// Sign in with Apple button, so the game can be tested end to end without
+/// a paid Apple Developer account / Sign in with Apple capability set up
+/// yet. `AuthState.completeTestSignIn()` is a local-only placeholder for
+/// `AuthState.completeSignIn(userID:fullName:)` — swap the button's action
+/// back to the real Apple flow (see git history / AI.entitlements, which is
+/// already wired up and ready) once that's set up.
 struct SignInView: View {
     @ObservedObject var authState: AuthState
     let onSignedIn: () -> Void
@@ -23,9 +30,12 @@ struct SignInView: View {
             }
 
             VStack(spacing: 16) {
-                Text("AI")
-                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                Text("Spaces - AI Game")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(.black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .padding(.horizontal, 24)
 
                 Text("Sign in to save your progress\nacross devices.")
                     .font(.system(size: 13))
@@ -33,12 +43,16 @@ struct SignInView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
 
-                SignInWithAppleButton(.signIn, onRequest: configure, onCompletion: handle)
-                    .signInWithAppleButtonStyle(.white)
-                    .frame(width: 260, height: 50)
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(Color.black.opacity(0.15), lineWidth: 1))
-                    .padding(.top, 12)
+                Button(action: continueTapped) {
+                    Text("Continue")
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .foregroundColor(.black)
+                        .frame(width: 260, height: 50)
+                }
+                .background(Color.white)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.black.opacity(0.15), lineWidth: 1))
+                .padding(.top, 12)
             }
         }
     }
@@ -53,20 +67,8 @@ struct SignInView: View {
         }
     }
 
-    private func configure(_ request: ASAuthorizationAppleIDRequest) {
-        request.requestedScopes = [.fullName]
-    }
-
-    private func handle(_ result: Result<ASAuthorization, Error>) {
-        switch result {
-        case .success(let authorization):
-            if let credential = authorization.credential as? ASAuthorizationAppleIDCredential {
-                authState.completeSignIn(userID: credential.user, fullName: credential.fullName)
-                onSignedIn()
-            }
-        case .failure(let error):
-            // Cancelled or failed — stay on this screen so the player can retry.
-            print("Sign in with Apple failed: \(error.localizedDescription)")
-        }
+    private func continueTapped() {
+        authState.completeTestSignIn()
+        onSignedIn()
     }
 }

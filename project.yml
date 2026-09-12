@@ -30,7 +30,7 @@ targets:
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
         UIViewControllerBasedStatusBarAppearance: false
-        CFBundleDisplayName: "AI"
+        CFBundleDisplayName: "Spaces - AI Game"
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
