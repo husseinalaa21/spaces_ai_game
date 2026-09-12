@@ -13,6 +13,14 @@ locally-generated project. See "What's next" below.
 
 ## What's actually playable right now
 
+- **Launch flow**: a splash screen with the logo's dots gently shaking in
+  place and "Powered by Spacechat" pinned at the bottom while it loads, then
+  either straight into the game (if already signed in) or a Sign in with
+  Apple screen (small dots up top, a single white Apple sign-in button
+  center stage) — see "Sign in with Apple setup" below.
+- A window-pane grid background (the same light gray lines as the app's dot
+  logo) fills White Space, anchored to world space so it scrolls with you
+  instead of sitting fixed on screen.
 - A dot (you), in a huge white world, moved by dragging anywhere on screen.
 - ~30 emoji-based collectibles across 8 categories (food, nature, body, tech,
   space, emotion, animal, objects), each with its own rarity and color.
@@ -42,17 +50,20 @@ becomes a character, ship, or creature, per the spec's core rule (§82).
 
 ```
 Sources/AI/
-  App/           AIApp.swift (entry point), RootView.swift (onboarding ↔ game)
+  App/           AIApp.swift (entry point), RootView.swift (splash → sign-in → onboarding/game)
+  Auth/          AuthState.swift (local Sign in with Apple state — see below)
   Models/        Collectible.swift, CollectibleCatalog.swift (data-driven ~30 items),
                  WorldEntities.swift (spawned collectibles, ambient dots, signals)
   State/         PlayerState.swift (live @Published state + the saved PlayerProfile)
   Engine/        TransformationEngine.swift (absorb → progress → completion, pure logic),
                  GameEngine.swift (movement, spawning, collisions, abilities — the sim loop)
   Persistence/   SaveManager.swift (local JSON save/load; swap for a backend later)
-  Views/         WhiteSpaceView (the game screen/canvas), CollectionView, SettingsView,
-                 OnboardingView, DotRenderer (shared dot-drawing style)
+  Views/         SplashView, SignInView, WhiteSpaceView (the game screen/canvas),
+                 WorldBackground (shared grid renderer, White/Dark Space palettes),
+                 CollectionView, SettingsView, OnboardingView, DotRenderer (shared dot style)
   Utilities/     HapticsManager, AudioManager (silent no-op until real audio files are added)
   Resources/     Assets.xcassets (AppIcon — single dot per §110 — and AccentColor)
+AI.entitlements  Sign in with Apple capability (repo root, referenced by project.yml)
 ```
 
 This mirrors the module list in §89 of the spec. `WorldEngine`/`WhiteSpaceWorld`
@@ -82,6 +93,26 @@ If you'd rather not install XcodeGen, you can instead create a new Xcode
 project yourself (iOS App → SwiftUI → Swift) and drag the `Sources/AI`
 folder's contents into it, making sure "Copy items if needed" is checked and
 the `Assets.xcassets` you drag in replaces the default one.
+
+## Sign in with Apple setup
+
+The sign-in screen uses Apple's real `SignInWithAppleButton`, which needs the
+"Sign in with Apple" capability — already wired up via `AI.entitlements` and
+`CODE_SIGN_ENTITLEMENTS` in `project.yml`, so `xcodegen generate` sets it up
+automatically. A few things worth knowing:
+
+- **In the Simulator**: this just works with automatic signing, as long as
+  Xcode is signed in with your own Apple ID (Xcode → Settings → Accounts).
+  No paid developer account needed for Simulator testing.
+- **On a physical device**: you'll need your bundle identifier
+  (`com.husseinalaa.ai`, or whatever you change it to in `project.yml`)
+  registered with the "Sign in with Apple" capability enabled in your Apple
+  Developer account, and Xcode's automatic signing will otherwise handle
+  provisioning.
+- There's no backend yet to verify the Apple credential against, so
+  `AuthState` just remembers the Apple user identifier locally (in
+  UserDefaults) so a returning player skips straight past this screen. This
+  is a clearly-marked placeholder for a real backend-verified session later.
 
 ## What's next (not built yet, but designed for)
 

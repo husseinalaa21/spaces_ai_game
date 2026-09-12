@@ -24,7 +24,7 @@ struct WhiteSpaceView: View {
                     engine.tick(dt: dt)
                 }
             }
-            .background(Color.white)
+            .background(WorldBackground.whiteSpace.background)
             .contentShape(Rectangle())
             .gesture(dragGesture(screenSize: screenSize))
             .overlay(alignment: .top) { hud }
@@ -50,6 +50,10 @@ struct WhiteSpaceView: View {
         func toScreen(_ world: CGPoint) -> CGPoint {
             CGPoint(x: world.x - camera.x, y: world.y - camera.y)
         }
+
+        // Window-pane grid, anchored to world space so it scrolls with the player
+        // instead of sitting fixed on screen — same look as the app's dot logo.
+        WorldBackground.draw(context, screenSize: screenSize, cameraOffset: camera, palette: WorldBackground.whiteSpace)
 
         // Ambient wanderers (drawn faint/behind everything else).
         for w in engine.wanderers {
