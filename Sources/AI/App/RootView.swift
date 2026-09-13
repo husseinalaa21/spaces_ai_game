@@ -12,13 +12,21 @@ struct RootView: View {
     @StateObject private var authState = AuthState()
     private let saveManager: SaveManager
 
-    private enum Phase { case splash, signIn, home, playing }
+    // Play opens a 30-second food universe, then moves directly into combat.
+    private enum Phase { case splash, signIn, home, intro, practiceRound, finalRound }
     @State private var phase: Phase = .splash
 
     init() {
         let manager = SaveManager()
         let loadedProfile = manager.load()
         let playerState = PlayerState(profile: loadedProfile)
+        // Fills in a generated "davi_32"-style handle on a fresh profile (or
+        // one saved before this field existed) so there's always a name to
+        // show under the player's own dot from the very first frame.
+        playerState.ensureUsername()
+        if playerState.profile.username != loadedProfile.username {
+            manager.saveNow(playerState.profile)
+        }
         _player = StateObject(wrappedValue: playerState)
         _engine = StateObject(wrappedValue: GameEngine(player: playerState, saveManager: manager))
         saveManager = manager
@@ -39,30 +47,41 @@ struct RootView: View {
                 }
 
             case .home:
-                MainMenuView {
-                    engine.startRound()
-                    withAnimation { phase = .playing }
+                MainMenuView(player: player, save: { saveManager.saveNow(player.profile) }) {
+                    withAnimation { phase = .intro }
                 }
 
-            case .playing:
-                if player.profile.hasCompletedOnboarding {
-                    WhiteSpaceView(engine: engine, player: player, onQuit: {
-                        withAnimation { phase = .home }
-                    })
-                } else {
-                    OnboardingView {
-                        player.profile.hasCompletedOnboarding = true
-                        saveManager.saveNow(player.profile)
-                    }
+            case .intro:
+                OnboardingView {
+                    engine.startRound(mode: .practice, duration: GameEngine.practiceDuration)
+                    withAnimation { phase = .practiceRound }
                 }
+
+            case .practiceRound:
+                WhiteSpaceView(engine: engine, player: player, onQuit: {
+                    withAnimation { phase = .home }
+                }, onRoundComplete: {
+                    engine.startRound(mode: .final)
+                    withAnimation { phase = .finalRound }
+                })
+
+            case .finalRound:
+                WhiteSpaceView(engine: engine, player: player, onQuit: {
+                    withAnimation { phase = .home }
+                })
             }
         }
         .onChange(of: player.profile.soundEnabled) { v in AudioManager.shared.soundEnabled = v }
-        .onChange(of: player.profile.musicEnabled) { v in AudioManager.shared.musicEnabled = v }
+        .onChange(of: player.profile.musicEnabled) { v in
+            let inWhiteSpace = phase == .practiceRound || phase == .finalRound
+            AudioManager.shared.setMusicEnabled(v, wantsMusic: inWhiteSpace ? "ambient" : nil)
+        }
         .onChange(of: authState.isSignedIn) { signedIn in
             // Handles the rare case where Apple reports the credential was
             // revoked after we'd already let the player into the game.
-            if (phase == .home || phase == .playing) && !signedIn {
+            let inGameFlow = phase == .home || phase == .intro || phase == .practiceRound
+                || phase == .finalRound
+            if inGameFlow && !signedIn {
                 phase = .signIn
             }
         }

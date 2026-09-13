@@ -72,8 +72,9 @@ struct SplashView: View {
                 .frame(width: clusterSize, height: clusterSize)
             }
 
-            VStack {
+            VStack(spacing: 10) {
                 Spacer()
+                LoadingDots()
                 Text("Powered by Spacechat")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
@@ -85,5 +86,28 @@ struct SplashView: View {
                 onFinished()
             }
         }
+    }
+}
+
+/// A small three-dot "loading" indicator — each dot rises and brightens in
+/// turn — so the splash beat reads as something actively happening rather
+/// than a static logo sitting there for 1.8 seconds.
+private struct LoadingDots: View {
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 7) {
+                ForEach(0..<3) { i in
+                    let phase = t * 3.2 - Double(i) * 0.9
+                    let bounce = max(0, sin(phase))
+                    Circle()
+                        .fill(Color(white: 0.16))
+                        .frame(width: 6, height: 6)
+                        .opacity(0.35 + 0.65 * bounce)
+                        .offset(y: -CGFloat(bounce) * 4)
+                }
+            }
+        }
+        .frame(height: 14)
     }
 }

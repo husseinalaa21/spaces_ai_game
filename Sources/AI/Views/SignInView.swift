@@ -30,7 +30,7 @@ struct SignInView: View {
             }
 
             VStack(spacing: 16) {
-                Text("Spaces - AI Game")
+                Text("Spaces")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(.black)
                     .lineLimit(1)

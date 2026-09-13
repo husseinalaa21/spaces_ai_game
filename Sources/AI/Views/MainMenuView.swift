@@ -1,29 +1,123 @@
 import SwiftUI
 
+/// A subtle "press" feel for buttons that don't already animate their own
+/// state — scales down and dims slightly while held, springs back on
+/// release. Applied across the main menu and Store so every tap reads as
+/// acknowledged instead of the label just instantly changing.
+struct PressableButtonStyle: ButtonStyle {
+    var scale: CGFloat = 0.95
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1.0)
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+}
+
 /// Shown right after sign-in (or straight after the splash screen, for a
-/// returning player), before White Space actually starts. One animated
-/// preview of the player dot — the same blue as the app's own logo dot,
-/// no card/background around it — and a single Play button at the bottom.
-/// White Space itself only starts once the player taps Play (`RootView`
-/// doesn't build the world until then).
+/// returning player), before White Space actually starts. An animated
+/// preview of the player dot — the same blue as the app's own logo dot, no
+/// card/background around it — two small cosmetic pickers (Universe, Dot
+/// Style — §27-29's AI+ premium store, MVP'd locally per §87), and a single
+/// Play button at the bottom. White Space itself only starts once the
+/// player taps Play (`RootView` doesn't build the world until then).
 struct MainMenuView: View {
+    @ObservedObject var player: PlayerState
+    var save: () -> Void = {}
     let onPlay: () -> Void
+
+    @State private var showPremiumSheet = false
+    @State private var showStore = false
+    @State private var showDailyReward = false
+    @State private var showRenameSheet = false
+    @State private var hasAppeared = false
+    /// Set when the player taps a locked Universe/Dot Style they don't yet
+    /// own (§ new — individually-priced cosmetics) — drives `CosmeticPurchaseSheet`.
+    @State private var purchaseTarget: CosmeticPurchase? = nil
+    /// "View More" under each picker (§ new — "add view more button under
+    /// them to let it view more dots or more universes") opens the full
+    /// catalog as a browsable grid, where tapping any tile just previews it
+    /// up top without committing anything — a separate Equip/Buy button
+    /// there is what actually changes the saved selection or spends Points.
+    @State private var browseKind: CosmeticBrowseSheet.Kind? = nil
 
     var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea()
+            // A very faint radial tint instead of flat white — just enough
+            // depth that the page doesn't feel like a blank sheet, without
+            // adding any actual clutter (§41).
+            RadialGradient(colors: [Color(white: 0.99), Color(white: 0.94)],
+                           center: .center, startRadius: 40, endRadius: 420)
+                .ignoresSafeArea()
 
-            VStack(spacing: 32) {
+            VStack(spacing: 22) {
                 Spacer()
 
-                Text("Spaces - AI Game")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundColor(.black)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .padding(.horizontal, 24)
+                // No more "Spaces" wordmark above the preview (§ user
+                // feedback) — the animated dot cluster itself is the header
+                // now, the same way the app icon carries the brand with no
+                // name printed next to it. What sits there instead is the
+                // player's own handle (§ new — "add in the home page ability
+                // to let the user change his name"), the same "davi_32"-style
+                // name shown under every dot in the universe, tappable to
+                // rename right here rather than buried in Settings.
+                Button {
+                    showRenameSheet = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(player.profile.username ?? "")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        Image(systemName: "pencil")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundColor(.secondary)
+                }
+                .buttonStyle(PressableButtonStyle(scale: 0.97))
 
-                PlayPreviewDot()
+                ZStack {
+                    // AI+ dot styles get a few slow orbiting sparkles around
+                    // the preview so a premium pick visibly reads as more
+                    // special right on the menu, not just once in a round.
+                    if player.profile.selectedDotStyle.isPremium {
+                        OrbitingSparkles(color: player.profile.selectedDotStyle.swatchColor,
+                                          reduceMotion: player.profile.reduceMotion)
+                    }
+                    PlayPreviewDot(
+                        reduceMotion: player.profile.reduceMotion,
+                        dotStyle: player.profile.selectedDotStyle,
+                        isUnlocked: { player.profile.owns($0) },
+                        onSelectStyle: { player.profile.selectedDotStyle = $0; save() },
+                        onLockedTap: { purchaseTarget = .dotStyle($0) }
+                    )
+                }
+
+                Text(player.profile.selectedDotStyle.displayName)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundColor(.black.opacity(0.4))
+
+                viewMoreButton { browseKind = .dotStyles }
+
+                // Dot Style is now switched directly from the preview above
+                // (tap the blurred dot to its left/right) instead of its own
+                // swatch row — only Universe still uses a picker row, now
+                // `UniversePickerRow`'s richer preview tiles (a mini
+                // screenshot of each universe's real background) instead of
+                // the old plain circular swatches.
+                HStack(alignment: .top, spacing: 28) {
+                    UniversePickerRow(
+                        options: Array(UniverseTheme.allCases),
+                        selection: Binding(
+                            get: { player.profile.selectedUniverse },
+                            set: { player.profile.selectedUniverse = $0; save() }
+                        ),
+                        isUnlocked: { player.profile.owns($0) },
+                        onLockedTap: { purchaseTarget = .universe($0) }
+                    )
+                }
+                .padding(.horizontal, 24)
+
+                viewMoreButton { browseKind = .universes }
 
                 Spacer()
 
@@ -35,9 +129,1152 @@ struct MainMenuView: View {
                 }
                 .background(Color.black)
                 .clipShape(Capsule())
+                .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
+                .buttonStyle(PressableButtonStyle())
                 .padding(.bottom, 48)
             }
+            .opacity(hasAppeared ? 1 : 0)
+            .offset(y: hasAppeared ? 0 : 12)
+
+            VStack {
+                HStack(alignment: .top, spacing: 10) {
+                    storeButton
+                    dailyRewardButton
+                    Spacer()
+                    pointsBadge
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 54)
+                Spacer()
+            }
+            .opacity(hasAppeared ? 1 : 0)
         }
+        .onAppear {
+            // A quiet fade + rise on first appearance (skipped entirely
+            // under Reduce Motion) — landing on the menu feels like arriving
+            // somewhere rather than the UI just being instantly present.
+            if player.profile.reduceMotion {
+                hasAppeared = true
+            } else {
+                withAnimation(.easeOut(duration: 0.5)) { hasAppeared = true }
+            }
+        }
+        .sheet(isPresented: $showPremiumSheet) {
+            PremiumUnlockSheet(onUnlock: {
+                player.profile.isPremium = true
+                save()
+                showPremiumSheet = false
+            })
+        }
+        .sheet(isPresented: $showStore) {
+            StoreView(player: player, save: save)
+        }
+        .sheet(isPresented: $showDailyReward) {
+            DailyRewardSheet(player: player, save: save)
+        }
+        .sheet(isPresented: $showRenameSheet) {
+            RenameSheet(currentName: player.profile.username ?? "") { newName in
+                player.profile.username = newName
+                save()
+            }
+        }
+        .sheet(item: $purchaseTarget) { purchase in
+            CosmeticPurchaseSheet(
+                purchase: purchase,
+                player: player,
+                onBuy: { buy(purchase) },
+                onGetPremium: {
+                    purchaseTarget = nil
+                    showPremiumSheet = true
+                }
+            )
+        }
+        .sheet(item: $browseKind) { kind in
+            CosmeticBrowseSheet(
+                kind: kind,
+                player: player,
+                save: save,
+                onGetPremium: {
+                    browseKind = nil
+                    showPremiumSheet = true
+                }
+            )
+        }
+    }
+
+    /// A small, quiet text button under each picker (§ new — "add view more
+    /// button under them") opening the full catalog as a browsable grid.
+    private func viewMoreButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Text("View More")
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundColor(.black.opacity(0.4))
+        }
+        .buttonStyle(PressableButtonStyle(scale: 0.96))
+    }
+
+    /// Spends Points to unlock a single locked Universe or Dot Style (see
+    /// `CosmeticPurchaseSheet`) — a no-op if the player can't actually
+    /// afford it, so the "Buy" button there is already disabled in that case.
+    private func buy(_ purchase: CosmeticPurchase) {
+        let bought: Bool
+        switch purchase {
+        case .universe(let theme): bought = player.purchase(theme)
+        case .dotStyle(let style): bought = player.purchase(style)
+        }
+        guard bought else { return }
+        save()
+        HapticsManager.shared.success()
+        purchaseTarget = nil
+    }
+
+    // MARK: - Store / Points (top bar)
+
+    private var storeButton: some View {
+        Button(action: { showStore = true }) {
+            Image(systemName: "bag.fill")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(.black.opacity(0.75))
+                .frame(width: 42, height: 42)
+                .background(.ultraThinMaterial, in: Circle())
+                .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+        }
+        .buttonStyle(PressableButtonStyle())
+    }
+
+    /// Opens `DailyRewardSheet`; a small dot badges the icon whenever a
+    /// reward is waiting to be claimed (§ new — a plain gift icon by itself
+    /// gives no reason to ever tap it, so the badge is what actually invites
+    /// the tap on the days it matters).
+    private var dailyRewardButton: some View {
+        Button(action: { showDailyReward = true }) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "gift.fill")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundColor(.black.opacity(0.75))
+                    .frame(width: 42, height: 42)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+                if player.canClaimDailyReward {
+                    Circle()
+                        .fill(Color(red: 0.9, green: 0.28, blue: 0.24))
+                        .frame(width: 11, height: 11)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+                        .offset(x: 3, y: -3)
+                }
+            }
+        }
+        .buttonStyle(PressableButtonStyle())
+    }
+
+    private var pointsBadge: some View {
+        Button(action: { showStore = true }) {
+            HStack(spacing: 5) {
+                Image("Sparkle")
+                    .renderingMode(.template)
+                    .resizable()
+                    .frame(width: 13, height: 13)
+                    .foregroundColor(Color(red: 0.85, green: 0.65, blue: 0.13))
+                Text(formattedPoints)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundColor(.black.opacity(0.8))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(.ultraThinMaterial, in: Capsule())
+            .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+        }
+        .buttonStyle(PressableButtonStyle())
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: player.profile.points)
+    }
+
+    private var formattedPoints: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        return formatter.string(from: NSNumber(value: player.profile.points)) ?? "\(player.profile.points)"
+    }
+}
+
+/// Universe picker: rounded-square tiles that actually look like a tiny
+/// screenshot of that universe (same background/grid `WorldBackground`
+/// draws in-game, plus a couple of small "icon" dots) instead of a flat
+/// color swatch. Shows only three at a time — previous / selected (center,
+/// bigger) / next — rather than laying out every option in one row, so this
+/// keeps working cleanly now that the catalog has grown well past three
+/// (§ new — "add more universes to buy"); tapping a side tile cycles the
+/// selection, mirroring the Dot Style preview's own prev/next carousel feel
+/// (`PlayPreviewDot` below uses the exact same modulo-index approach).
+private struct UniversePickerRow: View {
+    let options: [UniverseTheme]
+    @Binding var selection: UniverseTheme
+    let isUnlocked: (UniverseTheme) -> Bool
+    let onLockedTap: (UniverseTheme) -> Void
+
+    private var index: Int { options.firstIndex(of: selection) ?? 0 }
+    private var previous: UniverseTheme { options[(index - 1 + options.count) % options.count] }
+    private var next: UniverseTheme { options[(index + 1) % options.count] }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text("UNIVERSE")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundColor(.black.opacity(0.45))
+
+            HStack(spacing: 18) {
+                sideTile(previous)
+                centerTile
+                sideTile(next)
+            }
+            .padding(.top, 4)
+            .animation(.spring(response: 0.4, dampingFraction: 0.75), value: selection)
+
+            Text(selection.displayName)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.black.opacity(0.35))
+        }
+    }
+
+    private var centerTile: some View {
+        UniverseSwatch(theme: selection, isSelected: true, locked: false)
+    }
+
+    private func sideTile(_ theme: UniverseTheme) -> some View {
+        Button {
+            select(theme)
+        } label: {
+            UniverseSwatch(theme: theme, isSelected: false, locked: !isUnlocked(theme))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func select(_ theme: UniverseTheme) {
+        if isUnlocked(theme) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                selection = theme
+            }
+        } else {
+            onLockedTap(theme)
+        }
+    }
+}
+
+/// A single Universe preview tile — a rounded-square "screenshot" of that
+/// universe's actual `WorldBackground` palette (same background fill + grid
+/// color used in-game) with a few small colored dots standing in for the
+/// rival dots you'd see floating in it, so the home page picker reads as a
+/// tiny window into each universe rather than an abstract color chip.
+private struct UniverseSwatch: View {
+    let theme: UniverseTheme
+    let isSelected: Bool
+    let locked: Bool
+
+    private var palette: WorldBackground.Palette { WorldBackground.palette(for: theme) }
+    private var size: CGFloat { isSelected ? 64 : 50 }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(palette.background)
+
+            // Miniature grid, echoing the real in-game background at a
+            // much smaller scale.
+            Canvas { context, canvasSize in
+                let step: CGFloat = canvasSize.width / 3
+                var x: CGFloat = step
+                while x < canvasSize.width {
+                    var path = Path()
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: canvasSize.height))
+                    context.stroke(path, with: .color(palette.line), lineWidth: 1)
+                    x += step
+                }
+                var y: CGFloat = step
+                while y < canvasSize.height {
+                    var path = Path()
+                    path.move(to: CGPoint(x: 0, y: y))
+                    path.addLine(to: CGPoint(x: canvasSize.width, y: y))
+                    context.stroke(path, with: .color(palette.line), lineWidth: 1)
+                    y += step
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            // A couple of tiny "icon" dots standing in for rival dots
+            // floating in that universe, fixed per-theme so the tile
+            // doesn't visually jitter between renders.
+            GeometryReader { geo in
+                let w = geo.size.width
+                let h = geo.size.height
+                Circle()
+                    .fill(palette.line.opacity(0.9))
+                    .frame(width: w * 0.16, height: w * 0.16)
+                    .position(x: w * 0.28, y: h * 0.32)
+                Circle()
+                    .fill(palette.line.opacity(0.7))
+                    .frame(width: w * 0.11, height: w * 0.11)
+                    .position(x: w * 0.7, y: h * 0.68)
+                Circle()
+                    .fill(theme.swatchColor.opacity(0.55))
+                    .frame(width: w * 0.13, height: w * 0.13)
+                    .position(x: w * 0.68, y: h * 0.3)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            if locked {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.black.opacity(0.4))
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+            } else if isSelected {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.white, lineWidth: 2.5)
+                    .shadow(color: .black.opacity(0.25), radius: 3)
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.4), radius: 2)
+                    .offset(x: size / 2 - 10, y: -(size / 2) + 10)
+            }
+        }
+        .frame(width: size, height: size)
+        .shadow(color: .black.opacity(0.18), radius: isSelected ? 6 : 3, y: 2)
+        .scaleEffect(isSelected ? 1.0 : 0.92)
+        .opacity(isSelected ? 1.0 : 0.75)
+    }
+}
+
+/// A static single-frame render of the REAL in-game dot for a given Dot
+/// Style — the actual `DotRenderer.drawPlayer` output (liquid body shape,
+/// glossy gradient shading, ambient glow, eyes, worn hat, and worn clothing
+/// accessory) instead of a simplified hand-drawn circle+icon. Used by every
+/// shop/browse tile so what the player sees while shopping always matches
+/// what they'll actually see equipped (§ user feedback: "the style of the
+/// dots needs more work"). `time: 0` plus `reduceMotion: true` freezes the
+/// idle wobble/blink/sweep at a clean resting frame — plenty for a thumbnail.
+private struct DotStylePreviewCanvas: View {
+    let style: DotStyle
+    var diameter: CGFloat = 46
+
+    var body: some View {
+        Canvas { context, size in
+            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+            let radius = diameter * 0.28
+            DotRenderer.drawPlayer(
+                context, center: center, radius: radius,
+                color: DotStyle.classic.swatchColor,
+                stretch: 0, angle: .zero, lookDirection: .zero, time: 0,
+                eyeStyle: .whiteOnly, reduceMotion: true, eatPulse: 0,
+                dotStyle: style, showGroundShadow: false
+            )
+        }
+        .frame(width: diameter, height: diameter)
+    }
+}
+
+/// Identifies a single locked Universe or Dot Style the player just tapped
+/// (§ new — individually-priced cosmetics), so one `CosmeticPurchaseSheet`
+/// can serve both pickers instead of writing it twice.
+private enum CosmeticPurchase: Identifiable, Equatable {
+    case universe(UniverseTheme)
+    case dotStyle(DotStyle)
+
+    var id: String {
+        switch self {
+        case .universe(let theme): return "universe_\(theme.rawValue)"
+        case .dotStyle(let style): return "dotStyle_\(style.rawValue)"
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .universe(let theme): return theme.displayName
+        case .dotStyle(let style): return style.displayName
+        }
+    }
+
+    var price: Int {
+        switch self {
+        case .universe(let theme): return theme.price
+        case .dotStyle(let style): return style.price
+        }
+    }
+}
+
+/// Shown when tapping a locked Universe or Dot Style that isn't covered by
+/// AI+ Premium — buy just that one item with Points, or jump straight to
+/// AI+ for everything at once. Exactly like `PremiumUnlockSheet` and
+/// `StoreView`, no real payment is taken here — buying only spends the
+/// player's own saved Points.
+private struct CosmeticPurchaseSheet: View {
+    let purchase: CosmeticPurchase
+    @ObservedObject var player: PlayerState
+    var onBuy: () -> Void
+    var onGetPremium: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var canAfford: Bool { player.profile.points >= purchase.price }
+    private let gold = DotStyle.gold.swatchColor
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Capsule()
+                .fill(Color.black.opacity(0.15))
+                .frame(width: 36, height: 5)
+                .padding(.top, 10)
+
+            previewView
+                .frame(width: 90, height: 90)
+
+            Text(purchase.name)
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+
+            HStack(spacing: 6) {
+                Image("Sparkle").renderingMode(.template).resizable()
+                    .frame(width: 16, height: 16).foregroundColor(gold)
+                Text("\(purchase.price)")
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+            }
+            .foregroundColor(.black.opacity(0.75))
+
+            Button(action: onBuy) {
+                Text(canAfford ? "Buy for \(purchase.price) Points" : "Not enough Points")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .background(canAfford ? Color.black : Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 14))
+            .buttonStyle(PressableButtonStyle())
+            .disabled(!canAfford)
+            .padding(.horizontal, 24)
+
+            Button(action: onGetPremium) {
+                Text("Or unlock everything with AI+")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.bottom, 20)
+        }
+        .presentationDetents([.height(360)])
+    }
+
+    @ViewBuilder private var previewView: some View {
+        switch purchase {
+        case .universe(let theme):
+            UniverseSwatch(theme: theme, isSelected: true, locked: false)
+        case .dotStyle(let style):
+            DotStylePreviewCanvas(style: style, diameter: 74)
+        }
+    }
+}
+
+/// The full catalog for Universes or Dot Styles, reachable via "View More"
+/// under either picker on the main menu (§ new — "add view more button
+/// under them to let it view more dots or more universes"). Tapping any
+/// tile in the grid — owned or not — just changes the big preview up top
+/// ("let user able to change the dot or universe as preview"); a separate
+/// Equip/Buy button there is what actually changes the player's saved
+/// selection or spends Points, so freely browsing never commits anything.
+private struct CosmeticBrowseSheet: View {
+    enum Kind: Identifiable {
+        case universes, dotStyles
+        var id: Self { self }
+    }
+
+    let kind: Kind
+    @ObservedObject var player: PlayerState
+    var save: () -> Void
+    var onGetPremium: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var previewUniverse: UniverseTheme
+    @State private var previewDotStyle: DotStyle
+
+    init(kind: Kind, player: PlayerState, save: @escaping () -> Void, onGetPremium: @escaping () -> Void) {
+        self.kind = kind
+        self.player = player
+        self.save = save
+        self.onGetPremium = onGetPremium
+        _previewUniverse = State(initialValue: player.profile.selectedUniverse)
+        _previewDotStyle = State(initialValue: player.profile.selectedDotStyle)
+    }
+
+    private var title: String { kind == .universes ? "Universes" : "Dot Styles" }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    previewHeader
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 12)], spacing: 16) {
+                        switch kind {
+                        case .universes: universeTiles
+                        case .dotStyles: dotStyleTiles
+                        }
+                    }
+                    .padding(16)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+                    .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+
+                    Button(action: onGetPremium) {
+                        Text("Unlock everything with AI+")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(20)
+            }
+            .background(Color(white: 0.96).ignoresSafeArea())
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    // MARK: - Preview header (updates on tap, commits nothing by itself)
+
+    @ViewBuilder private var previewHeader: some View {
+        switch kind {
+        case .universes:
+            previewCard(name: previewUniverse.displayName,
+                        owned: player.profile.owns(previewUniverse),
+                        equipped: player.profile.selectedUniverse == previewUniverse,
+                        price: previewUniverse.price,
+                        onEquip: { player.profile.selectedUniverse = previewUniverse; save() },
+                        onBuy: { if player.purchase(previewUniverse) { save(); HapticsManager.shared.success() } }) {
+                UniverseSwatch(theme: previewUniverse, isSelected: true, locked: false)
+                    .scaleEffect(1.3)
+            }
+        case .dotStyles:
+            previewCard(name: previewDotStyle.displayName,
+                        owned: player.profile.owns(previewDotStyle),
+                        equipped: player.profile.selectedDotStyle == previewDotStyle,
+                        price: previewDotStyle.price,
+                        onEquip: { player.profile.selectedDotStyle = previewDotStyle; save() },
+                        onBuy: { if player.purchase(previewDotStyle) { save(); HapticsManager.shared.success() } }) {
+                DotStylePreviewCanvas(style: previewDotStyle, diameter: 88)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func previewCard<Preview: View>(
+        name: String, owned: Bool, equipped: Bool, price: Int,
+        onEquip: @escaping () -> Void, onBuy: @escaping () -> Void, @ViewBuilder preview: () -> Preview
+    ) -> some View {
+        VStack(spacing: 12) {
+            preview().padding(.vertical, 6)
+            Text(name).font(.system(size: 18, weight: .bold, design: .rounded))
+
+            if owned {
+                if equipped {
+                    Label("Equipped", systemImage: "checkmark.seal.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.green)
+                } else {
+                    Button(action: onEquip) {
+                        Text("Equip")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 22).padding(.vertical, 10)
+                    }
+                    .background(Color.black, in: Capsule())
+                    .buttonStyle(PressableButtonStyle())
+                }
+            } else {
+                let canAfford = player.profile.points >= price
+                Button(action: onBuy) {
+                    HStack(spacing: 6) {
+                        Image("Sparkle").renderingMode(.template).resizable().frame(width: 13, height: 13)
+                        Text(canAfford ? "Buy for \(price)" : "Need \(price)")
+                    }
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 22).padding(.vertical, 10)
+                }
+                .background(canAfford ? Color.black : Color.black.opacity(0.3), in: Capsule())
+                .buttonStyle(PressableButtonStyle())
+                .disabled(!canAfford)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
+        .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+    }
+
+    // MARK: - Grids (tap = preview only, never commits)
+
+    private var universeTiles: some View {
+        ForEach(UniverseTheme.allCases) { theme in
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { previewUniverse = theme }
+            } label: {
+                VStack(spacing: 4) {
+                    UniverseSwatch(theme: theme, isSelected: theme == previewUniverse, locked: !player.profile.owns(theme))
+                    Text(theme.displayName)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.black.opacity(0.6))
+                        .lineLimit(1)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var dotStyleTiles: some View {
+        ForEach(DotStyle.allCases) { style in
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { previewDotStyle = style }
+            } label: {
+                VStack(spacing: 4) {
+                    ZStack {
+                        DotStylePreviewCanvas(style: style, diameter: 46)
+                        if !player.profile.owns(style) {
+                            Circle().fill(Color.black.opacity(0.35)).frame(width: 46, height: 46)
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                        if style == previewDotStyle {
+                            Circle().stroke(Color.black.opacity(0.8), lineWidth: 2.5).frame(width: 50, height: 50)
+                        }
+                    }
+                    .frame(height: 52)
+                    Text(style.displayName)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.black.opacity(0.6))
+                        .lineLimit(1)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+}
+
+/// A plain explainer sheet for the AI+ premium picker options — there's no
+/// StoreKit/backend wired up yet (see README's "What's next"), so this is a
+/// clearly-labeled local test toggle, the same stand-in role `AuthState`'s
+/// "Continue" button plays for real Sign in with Apple until that's built.
+private struct PremiumUnlockSheet: View {
+    let onUnlock: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Capsule()
+                .fill(Color.black.opacity(0.15))
+                .frame(width: 36, height: 4)
+                .padding(.top, 10)
+
+            Text("AI+ Premium")
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+
+            Text("Unlocks extra Universe looks and Gold/Diamond/Galaxy dot styles — cosmetic only, never a gameplay advantage (§74).")
+                .font(.system(size: 14))
+                .foregroundColor(.black.opacity(0.65))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            Text("No real purchase flow is wired up yet — this just unlocks the picker locally for testing.")
+                .font(.system(size: 12))
+                .foregroundColor(.black.opacity(0.4))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            Button(action: onUnlock) {
+                Text("Preview AI+ (Test Mode)")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(width: 240, height: 48)
+            }
+            .background(Color.black)
+            .clipShape(Capsule())
+            .buttonStyle(PressableButtonStyle())
+            .padding(.top, 8)
+
+            Button("Not Now") { dismiss() }
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.black.opacity(0.5))
+                .padding(.bottom, 12)
+
+            Spacer()
+        }
+        .presentationDetents([.fraction(0.45)])
+    }
+}
+
+/// The daily login reward (§ new) — a free 7-day Points ladder, opened from
+/// the main menu's gift icon. Distinct from `StoreView`'s paid packs: nothing
+/// here is ever purchased, so there's no "Test Mode" language needed — it's
+/// just Points for showing up. One claim per calendar day
+/// (`PlayerState.canClaimDailyReward`); missing a day resets the ladder back
+/// to Day 1 without ever taking back Points already earned.
+private struct DailyRewardSheet: View {
+    @ObservedObject var player: PlayerState
+    var save: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private let gold = DotStyle.gold.swatchColor
+
+    /// The ladder day to visually highlight/check off: the day about to be
+    /// claimed if one is still available today, otherwise the day that was
+    /// just claimed (so the sheet doesn't look like it forgot what happened
+    /// the moment the claim button is tapped).
+    private var displayIndex: Int {
+        if player.canClaimDailyReward {
+            return player.nextDailyRewardIndex
+        }
+        return (player.nextDailyRewardIndex - 1 + PlayerState.dailyRewardLadder.count)
+            % PlayerState.dailyRewardLadder.count
+    }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Capsule()
+                .fill(Color.black.opacity(0.15))
+                .frame(width: 36, height: 4)
+                .padding(.top, 10)
+
+            Text("Daily Reward")
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+
+            Text("Come back every day to climb the ladder. Missing a day just resets it to Day 1 — you never lose Points you've already earned.")
+                .font(.system(size: 13))
+                .foregroundColor(.black.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 28)
+
+            HStack(spacing: 8) {
+                ForEach(0..<PlayerState.dailyRewardLadder.count, id: \.self) { i in
+                    ladderDay(i)
+                }
+            }
+            .padding(.horizontal, 12)
+
+            Button(action: claim) {
+                Text(player.canClaimDailyReward ? "Claim +\(player.nextDailyRewardAmount) Points" : "Come back tomorrow")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(width: 240, height: 48)
+            }
+            .background(player.canClaimDailyReward ? Color.black : Color.black.opacity(0.25))
+            .clipShape(Capsule())
+            .buttonStyle(PressableButtonStyle())
+            .disabled(!player.canClaimDailyReward)
+            .padding(.top, 4)
+
+            Button("Close") { dismiss() }
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.black.opacity(0.5))
+                .padding(.bottom, 12)
+
+            Spacer()
+        }
+        .presentationDetents([.fraction(0.58)])
+    }
+
+    private func ladderDay(_ index: Int) -> some View {
+        let isToday = index == displayIndex
+        let isPast = index < displayIndex
+        let isChecked = isPast || (isToday && !player.canClaimDailyReward)
+
+        return VStack(spacing: 6) {
+            Text("D\(index + 1)")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(.black.opacity(0.4))
+            ZStack {
+                Circle()
+                    .fill(isToday ? gold.opacity(0.18) : (isPast ? Color.black.opacity(0.06) : Color.black.opacity(0.04)))
+                    .frame(width: 36, height: 36)
+                if isChecked {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(isToday ? gold : .black.opacity(0.3))
+                } else {
+                    Image("Sparkle")
+                        .renderingMode(.template)
+                        .resizable()
+                        .frame(width: 13, height: 13)
+                        .foregroundColor(isToday ? gold : .black.opacity(0.25))
+                }
+            }
+            .scaleEffect(isToday ? 1.14 : 1.0)
+            .shadow(color: isToday ? gold.opacity(0.5) : .clear, radius: isToday ? 6 : 0)
+            Text("\(PlayerState.dailyRewardLadder[index])")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(.black.opacity(0.5))
+        }
+    }
+
+    private func claim() {
+        let amount = player.claimDailyReward()
+        guard amount > 0 else { return }
+        save()
+        HapticsManager.shared.success()
+    }
+}
+
+/// The Store — a full page (opened from the main menu's top-left bag icon),
+/// not just a small confirmation sheet. Two ways to reach AI+ Premium here:
+/// a mock membership purchase (same local test-mode pattern as
+/// `PremiumUnlockSheet`) or redeeming Points actually earned from play; a
+/// second section "sells" Point Packs the same honest way. Exactly like
+/// `PremiumUnlockSheet`, no StoreKit/backend is wired up (see README) — every
+/// button here only ever changes the local saved profile, and says so.
+private struct StoreView: View {
+    @ObservedObject var player: PlayerState
+    var save: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    static let membershipPointsCost = 2000
+    private let gold = DotStyle.gold.swatchColor
+
+    private let pointPacks: [(name: String, points: Int, price: String, icon: String, highlight: Bool)] = [
+        ("Starter Pack", 500, "$0.99", "shippingbox.fill", false),
+        ("Value Pack", 1500, "$2.99", "gift.fill", true),
+        ("Mega Pack", 5000, "$7.99", "crown.fill", false)
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    balanceCard
+                    membershipSection
+                    universesSection
+                    dotStylesSection
+                    pointPacksSection
+                    earnPointsSection
+
+                    Text("No real payment is processed anywhere in this Store yet — every button here only changes your local saved profile, for testing.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.black.opacity(0.4))
+                        .padding(.top, 4)
+                }
+                .padding(20)
+            }
+            .background(Color(white: 0.96).ignoresSafeArea())
+            .navigationTitle("Store")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var balanceCard: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Your Points")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.black.opacity(0.55))
+                HStack(spacing: 6) {
+                    Image("Sparkle").renderingMode(.template).resizable()
+                        .frame(width: 18, height: 18).foregroundColor(gold)
+                    Text(formattedPoints)
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .contentTransition(.numericText())
+                }
+            }
+            Spacer()
+            if player.profile.isPremium {
+                Label("AI+ Active", systemImage: "checkmark.seal.fill")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Color.black, in: Capsule())
+            }
+        }
+        .padding(18)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: player.profile.points)
+    }
+
+    private var membershipSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("AI+ MEMBERSHIP")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.black.opacity(0.45))
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("AI+ Premium").font(.system(size: 18, weight: .bold, design: .rounded))
+                Text("Unlocks every Universe look and every Dot Style (Gold, Diamond, Galaxy) — cosmetic only, never a gameplay advantage (§74).")
+                    .font(.system(size: 13))
+                    .foregroundColor(.black.opacity(0.6))
+
+                if player.profile.isPremium {
+                    Label("You already have AI+ Premium.", systemImage: "checkmark.seal.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.green)
+                } else {
+                    Button(action: unlockPremium) {
+                        HStack {
+                            Text("Subscribe — $4.99/mo (Test Mode)")
+                            Spacer()
+                        }
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 12)
+                        .background(Color.black, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(PressableButtonStyle())
+
+                    let canRedeem = player.profile.points >= Self.membershipPointsCost
+                    Button(action: redeemPremiumWithPoints) {
+                        HStack {
+                            Image("Sparkle").renderingMode(.template).resizable()
+                                .frame(width: 14, height: 14)
+                            Text("Redeem \(Self.membershipPointsCost) Points")
+                            Spacer()
+                            if !canRedeem {
+                                Text("Not enough").font(.system(size: 12)).foregroundColor(.black.opacity(0.4))
+                            }
+                        }
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundColor(canRedeem ? .black : .black.opacity(0.35))
+                        .padding(.horizontal, 16).padding(.vertical, 12)
+                        .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                    .disabled(!canRedeem)
+                }
+            }
+            .padding(16)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+        }
+    }
+
+    /// Every Universe, buyable one at a time with Points — a full shop
+    /// listing to browse and buy from directly, alongside the home menu's
+    /// own tap-a-locked-tile flow (§ new — "add more universes to buy").
+    private var universesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("UNIVERSES")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.black.opacity(0.45))
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 12)], spacing: 16) {
+                ForEach(UniverseTheme.allCases) { theme in
+                    cosmeticCell(
+                        name: theme.displayName,
+                        price: theme.price,
+                        owned: player.profile.owns(theme),
+                        equipped: player.profile.selectedUniverse == theme,
+                        preview: { UniverseSwatch(theme: theme, isSelected: true, locked: false) },
+                        onEquip: { player.profile.selectedUniverse = theme; save() },
+                        onBuy: { if player.purchase(theme) { save(); HapticsManager.shared.success() } }
+                    )
+                }
+            }
+            .padding(16)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+        }
+    }
+
+    /// Every Dot Style, same idea as `universesSection` above (§ new — "add
+    /// more dots... set price for them").
+    private var dotStylesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("DOT STYLES")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.black.opacity(0.45))
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 12)], spacing: 16) {
+                ForEach(DotStyle.allCases) { style in
+                    cosmeticCell(
+                        name: style.displayName,
+                        price: style.price,
+                        owned: player.profile.owns(style),
+                        equipped: player.profile.selectedDotStyle == style,
+                        preview: { DotStylePreviewCanvas(style: style, diameter: 46).frame(height: 52) },
+                        onEquip: { player.profile.selectedDotStyle = style; save() },
+                        onBuy: { if player.purchase(style) { save(); HapticsManager.shared.success() } }
+                    )
+                }
+            }
+            .padding(16)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+        }
+    }
+
+    /// One shop tile shared by both grids above — a small preview, its name,
+    /// and either an "Equip"/"Equipped" state (already owned) or a
+    /// "Buy N pts" button (still locked), so the same layout and behavior
+    /// serves Universes and Dot Styles alike.
+    @ViewBuilder
+    private func cosmeticCell<Preview: View>(
+        name: String, price: Int, owned: Bool, equipped: Bool,
+        @ViewBuilder preview: () -> Preview, onEquip: @escaping () -> Void, onBuy: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 6) {
+            preview()
+            Text(name)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundColor(.black.opacity(0.75))
+                .lineLimit(1)
+
+            if owned {
+                if equipped {
+                    Text("Equipped")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.green)
+                } else {
+                    Button("Equip", action: onEquip)
+                        .font(.system(size: 11, weight: .semibold))
+                        .buttonStyle(PressableButtonStyle(scale: 0.94))
+                }
+            } else {
+                let canAfford = player.profile.points >= price
+                Button(action: onBuy) {
+                    HStack(spacing: 3) {
+                        Image("Sparkle").renderingMode(.template).resizable()
+                            .frame(width: 9, height: 9)
+                        Text("\(price)")
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundColor(canAfford ? .black : .black.opacity(0.3))
+                .buttonStyle(PressableButtonStyle(scale: 0.94))
+                .disabled(!canAfford)
+            }
+        }
+    }
+
+    private var pointPacksSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("POINT PACKS")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.black.opacity(0.45))
+
+            VStack(spacing: 12) {
+                ForEach(pointPacks, id: \.name) { pack in
+                    Button(action: { buyPointPack(pack) }) {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle()
+                                    .fill(gold.opacity(0.15))
+                                    .frame(width: 40, height: 40)
+                                Image(systemName: pack.icon)
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundColor(gold)
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(pack.name)
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.black)
+                                HStack(spacing: 4) {
+                                    Image("Sparkle").renderingMode(.template).resizable()
+                                        .frame(width: 11, height: 11).foregroundColor(gold)
+                                    Text("+\(pack.points)")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(.black.opacity(0.55))
+                                }
+                            }
+                            Spacer()
+                            Text(pack.price)
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14).padding(.vertical, 8)
+                                .background(Color.black, in: Capsule())
+                        }
+                        .padding(14)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
+                        .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
+                        .overlay(alignment: .topTrailing) {
+                            if pack.highlight {
+                                Text("BEST VALUE")
+                                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(gold, in: Capsule())
+                                    .offset(x: -10, y: -8)
+                            }
+                        }
+                    }
+                    .buttonStyle(PressableButtonStyle(scale: 0.97))
+                }
+            }
+
+            Text("Test Mode — buying a pack just adds Points to your local profile, no real payment is taken.")
+                .font(.system(size: 11))
+                .foregroundColor(.black.opacity(0.4))
+        }
+    }
+
+    private var earnPointsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("EARN POINTS BY PLAYING")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.black.opacity(0.45))
+            VStack(alignment: .leading, spacing: 12) {
+                earnRow(icon: "sparkles", text: "Eat collectibles — more Points for rarer finds")
+                earnRow(icon: "checkmark.seal.fill", text: "Complete a form — +30 Points")
+                earnRow(icon: "arrow.up.circle.fill", text: "Level up — +15 Points")
+            }
+            .padding(16)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
+            .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
+        }
+    }
+
+    private func earnRow(icon: String, text: String) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle().fill(gold.opacity(0.15)).frame(width: 26, height: 26)
+                Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundColor(gold)
+            }
+            Text(text).font(.system(size: 13)).foregroundColor(.black.opacity(0.7))
+        }
+    }
+
+    private var formattedPoints: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        return formatter.string(from: NSNumber(value: player.profile.points)) ?? "\(player.profile.points)"
+    }
+
+    // MARK: - Actions (all local/test-mode — no real payment is ever taken)
+
+    private func unlockPremium() {
+        player.profile.isPremium = true
+        save()
+        HapticsManager.shared.success()
+    }
+
+    private func redeemPremiumWithPoints() {
+        guard player.profile.points >= Self.membershipPointsCost else { return }
+        player.profile.points -= Self.membershipPointsCost
+        player.profile.isPremium = true
+        save()
+        HapticsManager.shared.success()
+    }
+
+    private func buyPointPack(_ pack: (name: String, points: Int, price: String, icon: String, highlight: Bool)) {
+        player.profile.points += pack.points
+        save()
+        HapticsManager.shared.impact(.light)
     }
 }
 
@@ -46,22 +1283,300 @@ struct MainMenuView: View {
 /// (no card/box around it), with plain white eyes (no pupil) to match the
 /// logo's clean look. Uses the same squash-and-stretch body as the real
 /// in-game player (`DotRenderer.drawPlayer`), just driven by a scripted
-/// loop instead of real drag input.
+/// loop instead of real drag input — and reflects whichever Dot Style the
+/// player currently has selected, so this preview is always accurate.
+/// A few sparkle glyphs drifting slowly around the preview dot for premium
+/// Dot Styles — reuses the same "Sparkle" template image the in-round
+/// celebration bursts use (`SparkleBurst` in `WhiteSpaceView.swift`), just
+/// looping continuously and gently instead of bursting-and-fading once.
+/// Skipped under Reduce Motion, same as every other looping decoration.
+private struct OrbitingSparkles: View {
+    let color: Color
+    var reduceMotion: Bool = false
+
+    private let points: [(angle: Double, radius: CGFloat, size: CGFloat, speed: Double)] = [
+        (30, 74, 11, 0.5), (155, 82, 8, 0.4), (265, 70, 12, 0.6)
+    ]
+
+    var body: some View {
+        Group {
+            if reduceMotion {
+                EmptyView()
+            } else {
+                TimelineView(.animation) { timeline in
+                    let t = timeline.date.timeIntervalSinceReferenceDate
+                    ZStack {
+                        ForEach(points.indices, id: \.self) { i in
+                            let p = points[i]
+                            let angle = p.angle * .pi / 180 + t * p.speed
+                            let twinkle = 0.5 + 0.5 * sin(t * 2.4 + Double(i) * 1.3)
+                            Image("Sparkle")
+                                .renderingMode(.template)
+                                .resizable()
+                                .frame(width: p.size, height: p.size)
+                                .foregroundColor(color)
+                                .opacity(0.35 + 0.5 * twinkle)
+                                .offset(x: cos(angle) * p.radius, y: sin(angle) * p.radius * 0.6)
+                        }
+                    }
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// A small friendly cluster for the main menu (§ new "AI motions" pass): the
+/// player's own dot in the middle, kept genuinely round (no more looping
+/// squash-into-a-teardrop) but with a constant tiny nervous shake layered on
+/// top of `DotRenderer`'s built-in liquid wobble — reads as alive/idling
+/// rather than "about to move" — plus two smaller companion dots flanking it.
+/// All three now use `.withPupil` eyes (rather than the plain white ovals
+/// used elsewhere) and glance toward wherever the player is currently
+/// touching the cluster, falling back to a slow idle glance when they're not
+/// — a drag anywhere in this view moves the touch point, no minimum distance
+/// required, so it reads as instant eye contact rather than a swipe gesture.
+/// The main menu's Dot Style switcher (§ new — replaces the old "Dot Style"
+/// swatch row entirely): the player's own dot stays in the middle, in full
+/// focus, with soft out-of-focus previews of the previous/next style
+/// flanking it, exactly like a carousel's off-center cards. Tapping either
+/// side jumps straight to that style (or opens the AI+ sheet if it's still
+/// locked) via `onSelectStyle`/`onLockedTap`. Every eye everywhere here stays
+/// the plain white-oval style — no black pupil — matching the app's own
+/// clean logo dot; the touch point still nudges a gentle glance for a bit of
+/// life while dragging, it just no longer needs a filled pupil to show it.
 private struct PlayPreviewDot: View {
+    var reduceMotion: Bool = false
+    var dotStyle: DotStyle = .classic
+    var isUnlocked: (DotStyle) -> Bool = { _ in true }
+    var onSelectStyle: (DotStyle) -> Void = { _ in }
+    var onLockedTap: (DotStyle) -> Void = { _ in }
+
     private let blue = Color(red: 41 / 255, green: 121 / 255, blue: 255 / 255)
+    // Taller than the cluster strictly needs at rest, with the center placed
+    // low in that extra headroom rather than dead-center — the equipped
+    // dot's worn hat (premium Dot Styles) rides well above its own body, and
+    // between that, breathing bigger, and the new idle float below, the old
+    // shorter frame was clipping it right at the top edge (§ user feedback:
+    // "make sure the dots not being cut from the top").
+    private let clusterSize = CGSize(width: 240, height: 210)
+    private let sideOffset: CGFloat = 78
+    private let verticalOffset: CGFloat = 30
+    private let companionRadius: CGFloat = 20
+
+    // Only a little below the frame's own center (not dead-center) so
+    // `OrbitingSparkles`, which orbits around this view's frame center,
+    // still reads as circling the dot rather than sitting oddly high above it.
+    private var clusterCenter: CGPoint { CGPoint(x: clusterSize.width / 2, y: clusterSize.height / 2 + 15) }
+    private var leftCenter: CGPoint { CGPoint(x: clusterCenter.x - sideOffset, y: clusterCenter.y + verticalOffset) }
+    private var rightCenter: CGPoint { CGPoint(x: clusterCenter.x + sideOffset, y: clusterCenter.y + verticalOffset) }
+
+    private var previousStyle: DotStyle {
+        let all = Array(DotStyle.allCases)
+        let i = all.firstIndex(of: dotStyle) ?? 0
+        return all[(i - 1 + all.count) % all.count]
+    }
+    private var nextStyle: DotStyle {
+        let all = Array(DotStyle.allCases)
+        let i = all.firstIndex(of: dotStyle) ?? 0
+        return all[(i + 1) % all.count]
+    }
+
+    @State private var touchPoint: CGPoint? = nil
 
     var body: some View {
         TimelineView(.animation) { timeline in
-            Canvas { context, size in
+            Canvas { context, _ in
                 let t = timeline.date.timeIntervalSinceReferenceDate
-                let center = CGPoint(x: size.width / 2, y: size.height / 2)
-                let stretch = CGFloat(0.3 + 0.3 * (0.5 + 0.5 * sin(t * 1.8)))
-                let angle = Angle(radians: sin(t * 0.9) * 1.1)
-                DotRenderer.drawPlayer(context, center: center, radius: 44, color: blue,
+                let center = clusterCenter
+
+                func look(from dotCenter: CGPoint, idlePhase: Double, driftDX: Double = 0, driftDY: Double = 0) -> CGVector {
+                    guard let touchPoint else {
+                        // Nobody's touching it right now — the idle glance
+                        // follows the dot's OWN drift direction (the analytic
+                        // derivative of its float motion below) rather than a
+                        // generic sine unrelated to how the body is actually
+                        // moving, so the eyes read as physically attached to
+                        // the dot instead of a layer riding on top of it
+                        // (§ user feedback: "let the dot move as connect to
+                        // the part of the dot so when dot move somewhere the
+                        // eye will move with it"). A small residual bob is
+                        // kept on top so the eyes still have a touch of life
+                        // at the instants the drift itself passes through zero.
+                        let bob = sin(t * 0.6 + idlePhase) * 0.2
+                        return CGVector(dx: CGFloat(driftDX) * 0.7, dy: CGFloat(driftDY) * 0.7 + bob)
+                    }
+                    let maxDist: CGFloat = 70
+                    let dx = (touchPoint.x - dotCenter.x) / maxDist
+                    let dy = (touchPoint.y - dotCenter.y) / maxDist
+                    return CGVector(dx: max(-1, min(1, dx)), dy: max(-1, min(1, dy)))
+                }
+
+                // A small constant tremor — high-frequency, low-amplitude,
+                // and layered on top of (not instead of) the body's own slow
+                // liquid wobble — is what actually reads as "alive and
+                // paying attention" rather than the old approach of
+                // periodically morphing into a stretched-out teardrop.
+                let jitterX = reduceMotion ? 0 : CGFloat(sin(t * 9.0) * 0.55 + sin(t * 13.7 + 1.3) * 0.35)
+                let jitterY = reduceMotion ? 0 : CGFloat(sin(t * 11.3 + 0.7) * 0.5 + sin(t * 7.1 + 2.1) * 0.35)
+                // A slow, gentle float layered on top of that tremor — much
+                // bigger and much slower, like it's quietly hovering rather
+                // than pinned dead-still (§ user feedback: the movement and
+                // animation should read as much better/livelier). Purely
+                // vertical-and-slight-horizontal so it never drifts anywhere
+                // near the companions to either side.
+                let floatX = reduceMotion ? 0 : CGFloat(sin(t * 0.7 + 0.4) * 4)
+                let floatY = reduceMotion ? 0 : CGFloat(sin(t * 0.85) * 7)
+                // A gentle per-axis drift direction fed to the idle eye
+                // glance below — the sign/shape of each axis's own velocity
+                // (`cos` of the same phase `floatX`/`floatY` use, scaled
+                // down), kept deliberately PER-AXIS rather than normalized
+                // into a single unit vector. Normalizing (dividing by the
+                // combined speed) was tried and reverted: whenever both axes
+                // drift near zero at once the normalized direction has to
+                // swing wildly to stay unit-length, which is exactly what
+                // made the dot look like it was spazzing out. Per-axis
+                // values just fade to zero smoothly instead, with no
+                // division and nothing to blow up.
+                let mainDriftDX = reduceMotion ? 0 : cos(t * 0.7 + 0.4)
+                let mainDriftDY = reduceMotion ? 0 : cos(t * 0.85)
+                let breathe = reduceMotion ? 1.0 : 1.0 + 0.05 * sin(t * 2.0)
+                let mainCenter = CGPoint(x: center.x + jitterX + floatX, y: center.y + jitterY + floatY)
+
+                // Back to the calm, proven squash/stretch — a smoothly
+                // bounded sine for both amount and angle. (A version that
+                // derived the angle from the instantaneous drift direction
+                // via `atan2` was tried and reverted for the same reason as
+                // above: that angle spins rapidly whenever the drift passes
+                // near zero, which read as the dot's whole body twitching.)
+                let stretch = reduceMotion ? 0 : CGFloat(0.06 + 0.06 * sin(t * 1.3))
+                let angle = reduceMotion ? Angle(radians: 0) : Angle(radians: sin(t * 1.6) * 0.09)
+
+                DotRenderer.drawPlayer(context, center: mainCenter, radius: 44 * breathe, color: blue,
                                         stretch: stretch, angle: angle,
-                                        lookDirection: .zero, time: t, eyeStyle: .whiteOnly)
+                                        lookDirection: look(from: mainCenter, idlePhase: 0, driftDX: mainDriftDX, driftDY: mainDriftDY), time: t,
+                                        eyeStyle: .whiteOnly, reduceMotion: reduceMotion, dotStyle: dotStyle)
+
+                // Soft, out-of-focus previews of the previous/next Dot Style
+                // — blurred and slightly dimmed, carousel-style, so the
+                // center dot (the one actually equipped) stays the obvious
+                // focal point. These stay free of the tremor/squash above
+                // (§ user feedback: they shouldn't shake unless selected),
+                // but now get their own slow, quiet float+breathe so the
+                // whole cluster reads as alive instead of two frozen cutouts
+                // flanking the one dot that moves — tap one (see the gesture
+                // below) to make it the equipped one, and it's the one that
+                // starts shaking.
+                let leftBob = reduceMotion ? 0 : CGFloat(sin(t * 0.75 + 0.9) * 3)
+                let leftBreathe = reduceMotion ? 1.0 : 1.0 + 0.03 * sin(t * 1.4 + 0.9)
+                var leftContext = context
+                leftContext.opacity = 0.7
+                leftContext.addFilter(.blur(radius: 3))
+                let leftDriftDY = reduceMotion ? 0 : Double(cos(t * 0.75 + 0.9))
+                DotRenderer.drawPlayer(leftContext, center: CGPoint(x: leftCenter.x, y: leftCenter.y + leftBob),
+                                        radius: companionRadius * leftBreathe, color: blue,
+                                        stretch: 0, angle: .zero, lookDirection: look(from: leftCenter, idlePhase: 0.9, driftDY: leftDriftDY),
+                                        time: t, eyeStyle: .whiteOnly, reduceMotion: reduceMotion, dotStyle: previousStyle)
+
+                let rightBob = reduceMotion ? 0 : CGFloat(sin(t * 0.75 + 1.7) * 3)
+                let rightBreathe = reduceMotion ? 1.0 : 1.0 + 0.03 * sin(t * 1.4 + 1.7)
+                var rightContext = context
+                rightContext.opacity = 0.7
+                rightContext.addFilter(.blur(radius: 3))
+                let rightDriftDY = reduceMotion ? 0 : Double(cos(t * 0.75 + 1.7))
+                DotRenderer.drawPlayer(rightContext, center: CGPoint(x: rightCenter.x, y: rightCenter.y + rightBob),
+                                        radius: companionRadius * rightBreathe, color: blue,
+                                        stretch: 0, angle: .zero, lookDirection: look(from: rightCenter, idlePhase: 1.7, driftDY: rightDriftDY),
+                                        time: t, eyeStyle: .whiteOnly, reduceMotion: reduceMotion, dotStyle: nextStyle)
             }
         }
-        .frame(width: 140, height: 140)
+        .frame(width: clusterSize.width, height: clusterSize.height)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in touchPoint = value.location }
+                .onEnded { value in
+                    defer { touchPoint = nil }
+                    // Only a genuine tap (barely any movement) switches
+                    // styles — a real drag just drives the glance above and
+                    // shouldn't also accidentally flip the equipped style.
+                    let travel = hypot(value.location.x - value.startLocation.x,
+                                        value.location.y - value.startLocation.y)
+                    guard travel < 12 else { return }
+                    let hitRadius = companionRadius + 16
+                    if hypot(value.location.x - leftCenter.x, value.location.y - leftCenter.y) < hitRadius {
+                        select(previousStyle)
+                    } else if hypot(value.location.x - rightCenter.x, value.location.y - rightCenter.y) < hitRadius {
+                        select(nextStyle)
+                    }
+                }
+        )
+    }
+
+    private func select(_ style: DotStyle) {
+        if isUnlocked(style) {
+            HapticsManager.shared.impact(.light)
+            onSelectStyle(style)
+        } else {
+            onLockedTap(style)
+        }
+    }
+}
+
+/// The main menu's "change your name" sheet (§ new — reachable by tapping
+/// the handle shown above the dot preview, right on the home page rather
+/// than buried in Settings). Same minimal `NavigationStack` + `Form` style as
+/// `SettingsView`, just the one field.
+private struct RenameSheet: View {
+    let currentName: String
+    let onSave: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: String = ""
+
+    /// Same shape the generated "davi_32" handles use — lowercase letters,
+    /// digits, and underscores only — so a player-picked name still reads
+    /// consistently next to every rival's name under the dots in the universe.
+    private var trimmed: String {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private var isValid: Bool {
+        !trimmed.isEmpty && trimmed.count <= 16
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Your name", text: $draft)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .onChange(of: draft) { newValue in
+                            // Keep it to the same simple handle shape as the
+                            // generated names (letters/digits/underscore),
+                            // filtered live rather than rejected after the fact.
+                            let filtered = newValue.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "_" }
+                            if filtered != newValue { draft = filtered }
+                            if draft.count > 16 { draft = String(draft.prefix(16)) }
+                        }
+                } footer: {
+                    Text("Shown under your dot in the universe, like other players' names.")
+                }
+            }
+            .navigationTitle("Change Name")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(trimmed)
+                        dismiss()
+                    }
+                    .disabled(!isValid)
+                }
+            }
+        }
+        .onAppear { draft = currentName }
     }
 }

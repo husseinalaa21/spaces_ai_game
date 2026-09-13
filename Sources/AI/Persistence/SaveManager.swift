@@ -19,11 +19,21 @@ final class SaveManager {
     }
 
     func load() -> PlayerProfile {
-        guard let data = try? Data(contentsOf: fileURL),
-              let profile = try? JSONDecoder().decode(PlayerProfile.self, from: data) else {
+        guard let data = try? Data(contentsOf: fileURL) else {
             return PlayerProfile()
         }
-        return profile
+        if let profile = try? JSONDecoder().decode(PlayerProfile.self, from: data) {
+            return profile
+        }
+        // The save file exists but won't decode — e.g. a partial write from
+        // the app being killed mid-save, or a future build changing the
+        // schema in an incompatible way. Move it aside instead of silently
+        // starting fresh and then overwriting it for good on the next save,
+        // so there's at least a chance of recovering it by hand later.
+        let backupURL = fileURL.deletingLastPathComponent()
+            .appendingPathComponent(fileURL.lastPathComponent + ".corrupt-\(Int(Date().timeIntervalSince1970))")
+        try? FileManager.default.moveItem(at: fileURL, to: backupURL)
+        return PlayerProfile()
     }
 
     /// Debounced save so rapid eating doesn't hit disk every frame.

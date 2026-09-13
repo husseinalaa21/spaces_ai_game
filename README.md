@@ -1,4 +1,4 @@
-# Spaces - AI Game — Eat. Change. Evolve.
+# Spaces — Eat. Change. Evolve.
 
 A minimalist iOS game: you are always a dot. Explore a huge white space, eat
 icon-based collectibles, transform gradually toward whatever you eat most,
@@ -17,7 +17,7 @@ locally-generated project. See "What's next" below.
   (same layout/colors as `assets/logo.png`, minus the grid) with each dot
   jittering independently on its own timing, "Powered by Spacechat" pinned
   at the bottom, then either straight into the game (if already signed in)
-  or a "Spaces - AI Game" screen with small dots up top and a plain white
+  or a "Spaces" screen with small dots up top and a plain white
   **Continue** button — a temporary stand-in for a real Sign in with Apple
   button so the app is fully testable without a paid Apple Developer account
   yet; the "Sign in with Apple" capability is still wired up at the project
@@ -53,7 +53,12 @@ locally-generated project. See "What's next" below.
   pursuing.
 - Reaching 100% unlocks the form permanently, plays a short completion
   animation + haptic, and (for forms that have one) unlocks an active ability
-  usable from the bottom-right button once equipped.
+  usable from the bottom-right button once equipped. 10 of the 12 abilities
+  have a real local effect (speed bursts, a bigger reach, an instant nearby
+  burst-eat, slowing the round clock, pulling collectibles in); Scan and
+  Eagle Eye are still visual-only stubs — see `GameEngine.triggerAbility` —
+  since their natural payoff (revealing other players/threats) needs the
+  multiplayer Dark Space this build doesn't have yet.
 - A Collection screen (grid icon, bottom-left) shows every form, filterable
   by category, with progress/rarity/ability.
 - Intelligence points and levels accrue from discovering new icons and
@@ -86,9 +91,12 @@ Sources/AI/
                  WhiteSpaceView (the game screen/canvas),
                  WorldBackground (shared grid renderer, White/Dark Space palettes),
                  CollectionView, SettingsView, OnboardingView, DotRenderer (shared dot style)
-  Utilities/     HapticsManager, AudioManager (silent no-op until real audio files are added)
+  Utilities/     HapticsManager, AudioManager (plays the bundled sound effects below)
   Resources/     Assets.xcassets (AppIcon — single dot per §110 — AccentColor, and
-                 Logo — the real Vision 2 logo, used by SplashView)
+                 Logo — the real Vision 2 logo, used by SplashView), Sounds/
+                 (small synthesized .wav files: eat, rare eat, form complete,
+                 level up, ability, plus a soft looping ambient.wav that plays
+                 while White Space is open)
 AI.entitlements  Sign in with Apple capability (repo root, referenced by project.yml)
 ```
 
@@ -98,14 +106,12 @@ apart is straightforward once `DarkSpaceWorld` needs to exist alongside it.
 
 ## Opening this in Xcode
 
-This repo doesn't include a `.xcodeproj` — it's generated from `project.yml`
-with [XcodeGen](https://github.com/yonaskolb/XcodeGen), which keeps the
-project file out of source control and merge-conflict-free. One-time setup
-on your Mac:
+The generated `AI.xcodeproj`, shared `AI` scheme, and `Sources/AI/Info.plist`
+are committed so Xcode Cloud can build a clean checkout without installing
+XcodeGen. Open `AI.xcodeproj` in Xcode. If you change `project.yml`, regenerate
+and commit the resulting project and plist as well:
 
 ```bash
-brew install xcodegen
-cd spacesaigame          # this folder
 xcodegen generate
 open AI.xcodeproj
 ```
@@ -155,12 +161,30 @@ Following the phase order in §88:
   size-based PvP, respawn, leaderboard (§18–21).
 - **Phase 5 — Premium**: AI+ membership via StoreKit, premium dot
   materials/rings/trails, entitlement checks, Restore Purchases (§27–40).
-- **Phase 6 — Polish**: real audio assets (the `AudioManager` hooks are
-  already in place and just need `.caf`/`.wav` files added to the bundle),
-  App Store screenshots/metadata, moderation tooling for chat.
+- **Phase 6 — Polish**: audio is done (effects + a looping ambient track, see
+  "Project layout" above) — what's left here is App Store screenshots/
+  metadata and moderation tooling for chat.
 
 ## Design source of truth
 
 `AI_Game_Master_Build_Prompt.md` is the full spec this build follows and is
 saved in this Claude project's docs — check it before extending any system
 (rarity tiers, ability list, monetization rules, etc. are all defined there).
+
+## Xcode Cloud
+
+Use the shared **AI** scheme and **Release** Archive configuration. In the AI
+target's Signing & Capabilities pane, enable automatic signing and select
+your enrolled Apple Developer team. Keep `DEVELOPMENT_TEAM` in `project.yml`
+in sync if you regenerate the project. The bundle ID is `com.husseinalaa.ai`;
+it must match the App Store Connect app record.
+
+Connect this GitHub repository when creating the first Xcode Cloud workflow.
+Choose an iOS Archive action with **App Store Connect** distribution. The
+project has no XCTest target, so do not add a Test action until one exists.
+Test the processed build in TestFlight, then select it on the App Store
+version page and complete the metadata before submitting for review.
+
+Versions come from `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION`.
+Xcode Cloud manages its build numbers; for manual uploads, increment the
+build number before archiving another build of the same version.
