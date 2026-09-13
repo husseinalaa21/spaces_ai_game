@@ -380,6 +380,7 @@
 				CODE_SIGN_ENTITLEMENTS = AI.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = SVDD93966K;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = Sources/AI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -388,7 +389,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.husseinalaa.ai;
+				PRODUCT_BUNDLE_IDENTIFIER = com.spacechat.ai;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -461,6 +462,7 @@
 				CODE_SIGN_ENTITLEMENTS = AI.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = SVDD93966K;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = Sources/AI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -469,7 +471,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.husseinalaa.ai;
+				PRODUCT_BUNDLE_IDENTIFIER = com.spacechat.ai;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 				VERSIONING_SYSTEM = "apple-generic";
