@@ -19,6 +19,7 @@ targets:
       - path: Sources/AI
     resources:
       - path: Sources/AI/Resources/Assets.xcassets
+      - path: Sources/AI/Resources/Sounds
     info:
       path: Sources/AI/Info.plist
       properties:
@@ -30,11 +31,19 @@ targets:
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
         UIViewControllerBasedStatusBarAppearance: false
-        CFBundleDisplayName: "Spaces - AI Game"
+        CFBundleDisplayName: "Spaces - Dots and AI"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.husseinalaa.ai
+        PRODUCT_BUNDLE_IDENTIFIER: com.spacechat.ai
+        DEVELOPMENT_TEAM: SVDD93966K
+        PRODUCT_NAME: "Spaces - Dots and AI"
+        CODE_SIGN_STYLE: Automatic
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        VERSIONING_SYSTEM: apple-generic
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
