@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "36DAA53FCF00C28E6C5ED555"
-               BuildableName = "AI.app"
+               BuildableName = "Spaces - Dots and AI.app"
                BlueprintName = "AI"
                ReferencedContainer = "container:AI.xcodeproj">
             </BuildableReference>
@@ -33,7 +33,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "36DAA53FCF00C28E6C5ED555"
-            BuildableName = "AI.app"
+            BuildableName = "Spaces - Dots and AI.app"
             BlueprintName = "AI"
             ReferencedContainer = "container:AI.xcodeproj">
          </BuildableReference>
@@ -56,7 +56,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "36DAA53FCF00C28E6C5ED555"
-            BuildableName = "AI.app"
+            BuildableName = "Spaces - Dots and AI.app"
             BlueprintName = "AI"
             ReferencedContainer = "container:AI.xcodeproj">
          </BuildableReference>
@@ -75,7 +75,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "36DAA53FCF00C28E6C5ED555"
-            BuildableName = "AI.app"
+            BuildableName = "Spaces - Dots and AI.app"
             BlueprintName = "AI"
             ReferencedContainer = "container:AI.xcodeproj">
          </BuildableReference>
