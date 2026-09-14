@@ -306,25 +306,6 @@ enum CollectibleCatalog {
                                sizeEffect: 0.2),
     ]
 
-    /// A small, purely functional filler pellet — deliberately NOT part of
-    /// `all`/`randomWeighted()` above, so it never appears in the practice
-    /// room's icon variety and never shows up as a "discovered" form on the
-    /// Collection screen. Seeded instead of icons once the player reaches
-    /// the final universe (§ user feedback: "in the another universe don't
-    /// add the icons... they eat small blue dots"): a plain colored dot
-    /// (empty `icon`, so `WhiteSpaceView` naturally just draws the backing
-    /// circle with nothing on top) that only nudges size, on purpose kept
-    /// out of `TransformationEngine` entirely by `GameEngine.absorb` so
-    /// eating one never overwrites `activeFormID` — the player keeps
-    /// showing up as whatever they actually ate back in the first universe
-    /// (§ user feedback: "make the user as what he ate in the next
-    /// universe") instead of reverting to a plain blue speck.
-    static let plainOrb = CollectibleDefinition(
-        id: "orb", name: "Orb", icon: "", category: .objects, rarity: .common,
-        primaryColor: .hex(0x2979FF), activeAbility: nil,
-        passiveDescription: "", description: "A small drifting speck.",
-        sizeEffect: 0.35
-    )
 
     static func definition(for id: String) -> CollectibleDefinition? {
         byID[id]

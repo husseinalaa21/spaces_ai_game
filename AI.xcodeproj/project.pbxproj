@@ -41,7 +41,7 @@
 		07B472C9D880473EDD8D1668 /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
 		085F83481BCFC779F65BCB0A /* pop.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = pop.wav; sourceTree = "<group>"; };
 		11E8793DDEEBDB076716B0C5 /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
-		2548B5D89C3F7333DF34E6AD /* spacechatai.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = spacechatai.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2548B5D89C3F7333DF34E6AD /* AI.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		25F557CF4498101945E155DF /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		2745730785AA222B795AFC7E /* ambient.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = ambient.wav; sourceTree = "<group>"; };
 		28BEA2C2EBFB86254DA89338 /* AuthState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthState.swift; sourceTree = "<group>"; };
@@ -173,7 +173,7 @@
 		B20A78DB477814DCCB520B61 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				2548B5D89C3F7333DF34E6AD /* spacechatai.app */,
+				2548B5D89C3F7333DF34E6AD /* AI.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -222,7 +222,7 @@
 			packageProductDependencies = (
 			);
 			productName = AI;
-			productReference = 2548B5D89C3F7333DF34E6AD /* spacechatai.app */;
+			productReference = 2548B5D89C3F7333DF34E6AD /* AI.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -232,7 +232,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2660;
+				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					36DAA53FCF00C28E6C5ED555 = {
 						ProvisioningStyle = Automatic;
@@ -342,10 +342,8 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = SVDD93966K;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -366,7 +364,6 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -383,6 +380,7 @@
 				CODE_SIGN_ENTITLEMENTS = AI.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = SVDD93966K;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = Sources/AI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -434,10 +432,8 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = SVDD93966K;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -451,7 +447,6 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -468,6 +463,7 @@
 				CODE_SIGN_ENTITLEMENTS = AI.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = SVDD93966K;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = Sources/AI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;

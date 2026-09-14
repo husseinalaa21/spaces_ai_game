@@ -12,13 +12,8 @@ struct RootView: View {
     @StateObject private var authState = AuthState()
     private let saveManager: SaveManager
 
-    // `.playing` is now four steps (§ new Play flow, replaces the old
-    // one-time onboarding entirely): `.intro` is the falling-dot cinematic,
-    // shown every time; `.practiceRound` is the short 30-second room right
-    // after it; `.levelTransition` is a second falling-dot beat marking the
-    // move into `.finalRound`, the real, full-length round — its own
-    // Nebulous.io-style universe, with the "big eats small" rivalry active.
-    private enum Phase { case splash, signIn, home, intro, practiceRound, levelTransition, finalRound }
+    // Play opens a 30-second food universe, then moves directly into combat.
+    private enum Phase { case splash, signIn, home, intro, practiceRound, finalRound }
     @State private var phase: Phase = .splash
 
     init() {
@@ -58,9 +53,7 @@ struct RootView: View {
 
             case .intro:
                 OnboardingView {
-                    // § user feedback: "make the waiting time about 30 seconds"
-                    // — was 15.
-                    engine.startRound(mode: .practice, duration: 30)
+                    engine.startRound(mode: .practice, duration: GameEngine.practiceDuration)
                     withAnimation { phase = .practiceRound }
                 }
 
@@ -68,14 +61,9 @@ struct RootView: View {
                 WhiteSpaceView(engine: engine, player: player, onQuit: {
                     withAnimation { phase = .home }
                 }, onRoundComplete: {
-                    withAnimation { phase = .levelTransition }
-                })
-
-            case .levelTransition:
-                LevelTransitionView {
                     engine.startRound(mode: .final)
                     withAnimation { phase = .finalRound }
-                }
+                })
 
             case .finalRound:
                 WhiteSpaceView(engine: engine, player: player, onQuit: {
@@ -92,7 +80,7 @@ struct RootView: View {
             // Handles the rare case where Apple reports the credential was
             // revoked after we'd already let the player into the game.
             let inGameFlow = phase == .home || phase == .intro || phase == .practiceRound
-                || phase == .levelTransition || phase == .finalRound
+                || phase == .finalRound
             if inGameFlow && !signedIn {
                 phase = .signIn
             }

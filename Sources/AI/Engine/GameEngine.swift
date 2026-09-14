@@ -15,7 +15,9 @@ import UIKit
 final class GameEngine: ObservableObject {
     // MARK: World configuration
     static let worldSize: CGFloat = 4000
-    static let maxCollectibles = 160
+    static let maxCollectibles = 900
+    static let practiceDuration: Double = 30
+    static let maxGrowthDots = 700
     static let maxWanderers = 14
     static let baseSpeed: CGFloat = 130   // points/sec at radius = baseRadius
 
@@ -23,7 +25,7 @@ final class GameEngine: ObservableObject {
     /// player taps Play on the main menu.
     static let roundDuration: Double = 15 * 60
 
-    /// The two rooms of the new Play flow (§ new): a short, safe 15-second
+    /// The two rooms of the new Play flow (§ new): a short, safe 30-second
     /// "practice" room right after the falling-dot intro where everyone's
     /// just foraging side by side, then the real "final" room where being
     /// the smaller dot next to a rival actually costs you. Both share this
@@ -34,6 +36,7 @@ final class GameEngine: ObservableObject {
 
     let player: PlayerState
 
+    @Published var growthDots: [GrowthDot] = []
     @Published var collectibles: [SpawnedCollectible] = []
     @Published var wanderers: [AmbientWanderer] = []
     /// Simulated AI "rival" dots (§ new) — stand-ins for other players since
@@ -74,16 +77,6 @@ final class GameEngine: ObservableObject {
         self.player = player
         self.saveManager = saveManager
         player.position = CGPoint(x: GameEngine.worldSize / 2, y: GameEngine.worldSize / 2)
-        seedInitialWorld()
-    }
-
-    private func seedInitialWorld() {
-        for _ in 0..<100 {
-            spawnCollectible()
-        }
-        for _ in 0..<GameEngine.maxWanderers {
-            wanderers.append(makeWanderer())
-        }
     }
 
     /// Resets the round clock and lets the world start fresh — called both
@@ -98,18 +91,37 @@ final class GameEngine: ObservableObject {
         comboCount = 0
         comboBannerText = nil
         lastEatAt = nil
-        spawnRivals()
+        moveInput = .zero
+        activeSignal = nil
+        signalBannerText = nil
+        absorbEffects.removeAll()
+        timeSinceSpawnCheck = 0
+        timeSinceSignalCheck = 0
+        collectibles.removeAll()
+        growthDots.removeAll()
+        if mode == .practice {
+            for _ in 0..<GameEngine.maxCollectibles { spawnCollectible() }
+            wanderers = (0..<Self.maxWanderers).map { _ in makeWanderer() }
+            spawnRivals()
+        } else {
+            // Keep the same player, size, earned form and surviving rivals.
+            if let lastEatenID = player.lastEatenID { player.profile.activeFormID = lastEatenID }
+            wanderers.removeAll()
+            for _ in 0..<GameEngine.maxGrowthDots { spawnGrowthDot() }
+            if rivals.isEmpty { spawnRivals() }
+        }
     }
 
     // MARK: - Frame update
 
     func tick(dt: Double) {
-        guard dt > 0, dt < 1 else { return }
+        guard dt > 0, dt < 1, !roundExpired, !playerWasEaten else { return }
         updateMovement(dt: dt)
         updateAbilityTimers(dt: dt)
         updateWanderers(dt: dt)
         updateRivals(dt: dt)
         checkCollisions()
+        checkRivalCollisions()
         checkPlayerRivalCollisions()
         handleSpawning(dt: dt)
         handleSignals(dt: dt)
@@ -133,7 +145,7 @@ final class GameEngine: ObservableObject {
         // Ice's "Slow Pulse" — with no other players to actually slow down in
         // solo White Space, it buys the one thing that's always ticking:
         // the round clock, at 40% of its normal rate while active.
-        let rate = (player.abilityEffectRemaining > 0 && player.equippedAbility == .slowPulse) ? 0.4 : 1.0
+        let rate = (roundMode == .final && player.abilityEffectRemaining > 0 && player.equippedAbility == .slowPulse) ? 0.4 : 1.0
         timeRemaining = max(0, timeRemaining - dt * rate)
         if timeRemaining == 0 {
             roundExpired = true
@@ -243,7 +255,12 @@ final class GameEngine: ObservableObject {
         guard !rivals.isEmpty else { return }
         let speed: CGFloat = 55
         for i in rivals.indices {
-            if let target = nearestCollectiblePosition(to: rivals[i].position, within: 260) {
+            let rival = rivals[i]
+            let prey = roundMode == .final ? ([player.size > rival.radius * 1.15 ? player.position : nil]
+                + rivals.filter { $0.id != rival.id && $0.radius > rival.radius * 1.15 }.map { Optional($0.position) })
+                .compactMap { $0 }.filter { hypot($0.x - rival.position.x, $0.y - rival.position.y) < 300 }
+                .min { hypot($0.x - rival.position.x, $0.y - rival.position.y) < hypot($1.x - rival.position.x, $1.y - rival.position.y) } : nil
+            if let target = prey ?? nearestCollectiblePosition(to: rival.position, within: 260) {
                 let dx = target.x - rivals[i].position.x
                 let dy = target.y - rivals[i].position.y
                 rivals[i].heading = atan2(dy, dx)
@@ -258,7 +275,12 @@ final class GameEngine: ObservableObject {
             pos.y = min(max(pos.y, 0), GameEngine.worldSize)
             rivals[i].position = pos
 
-            if let idx = collectibleIndex(near: rivals[i].position, eatRadius: rivals[i].radius + 8) {
+            if roundMode == .final {
+                if let idx = growthDots.firstIndex(where: { hypot($0.position.x - pos.x, $0.position.y - pos.y) <= rivals[i].radius + 4 }) {
+                    growthDots.remove(at: idx)
+                    rivals[i].radius = min(GameEngine.rivalMaxRadius, rivals[i].radius + 0.35)
+                }
+            } else if let idx = collectibleIndex(near: rivals[i].position, eatRadius: rivals[i].radius + 8) {
                 let eaten = collectibles.remove(at: idx)
                 rivals[i].radius = min(GameEngine.rivalMaxRadius,
                                         rivals[i].radius + CGFloat(eaten.definition.absorptionPerEat) * 0.03)
@@ -269,10 +291,11 @@ final class GameEngine: ObservableObject {
     private func nearestCollectiblePosition(to point: CGPoint, within range: CGFloat) -> CGPoint? {
         var best: CGPoint? = nil
         var bestDist = range
-        for c in collectibles {
-            let dx = c.position.x - point.x, dy = c.position.y - point.y
+        let positions = roundMode == .practice ? collectibles.map(\.position) : growthDots.map(\.position)
+        for position in positions {
+            let dx = position.x - point.x, dy = position.y - point.y
             let d = sqrt(dx * dx + dy * dy)
-            if d < bestDist { bestDist = d; best = c.position }
+            if d < bestDist { bestDist = d; best = position }
         }
         return best
     }
@@ -286,11 +309,8 @@ final class GameEngine: ObservableObject {
         return nil
     }
 
-    /// The actual "big eats small" rule (§ user request) — only active once
-    /// `roundMode == .final`, so the earlier practice room stays purely
-    /// collectible-eating with zero risk. A dot has to be a clear 15% bigger
-    /// than the other, not just barely ahead, to actually eat it — keeps two
-    /// close-to-even dots from instant-eating each other on first touch.
+    /// In the final universe a clearly smaller dot eats a larger one.
+    /// Near-equal dots cannot eat each other.
     private func checkPlayerRivalCollisions() {
         guard roundMode == .final, !playerWasEaten, !rivals.isEmpty else { return }
         let sizeMargin: CGFloat = 1.15
@@ -302,7 +322,7 @@ final class GameEngine: ObservableObject {
             let touchDistance = (player.size + rival.radius) * 0.6
             guard dist <= touchDistance else { continue }
 
-            if player.size > rival.radius * sizeMargin {
+            if rival.radius > player.size * sizeMargin {
                 rivals.remove(at: i)
                 absorbEffects.append(AbsorbEffect(startPosition: rival.position, color: rival.tint, magnitude: rival.radius))
                 // A clearly bigger bump than a single collectible bite (§ user
@@ -310,9 +330,10 @@ final class GameEngine: ObservableObject {
                 // bigger") — eating another dot is the headline move here.
                 player.size = min(PlayerState.maxRadius, player.size + rival.radius * 0.35)
                 player.profile.points += 5
+                saveManager.scheduleSave(player.profile)
                 HapticsManager.shared.impact(.medium)
                 AudioManager.shared.playEat()
-            } else if rival.radius > player.size * sizeMargin {
+            } else if player.size > rival.radius * sizeMargin {
                 playerWasEaten = true
                 HapticsManager.shared.impact(.medium)
                 return
@@ -323,6 +344,10 @@ final class GameEngine: ObservableObject {
     // MARK: - Collisions / eating
 
     private func checkCollisions() {
+        if roundMode == .final {
+            eatGrowthDots(within: player.size + 5)
+            return
+        }
         guard !collectibles.isEmpty else { return }
         var eatenIndex: Int? = nil
         var pullRadius: CGFloat = 0
@@ -365,10 +390,6 @@ final class GameEngine: ObservableObject {
     }
 
     private func absorb(_ definition: CollectibleDefinition, from position: CGPoint) {
-        if definition.id == CollectibleCatalog.plainOrb.id {
-            absorbPlainOrb(definition, from: position)
-            return
-        }
         // Kick off the "liquid" travel effect first so it starts exactly at
         // the collectible's last position, then run the actual (instant)
         // progress/completion math — the effect is purely cosmetic and never
@@ -463,46 +484,6 @@ final class GameEngine: ObservableObject {
         saveManager.scheduleSave(player.profile)
     }
 
-    /// A stripped-down absorb for `CollectibleCatalog.plainOrb` — the small
-    /// blue filler pellets seeded in the final universe instead of icons.
-    /// Deliberately skips `TransformationEngine`/`activeFormID`/progress/
-    /// Intelligence entirely (unlike the full `absorb` above): an orb only
-    /// nudges size and Points, so the player keeps showing up as whatever
-    /// form they actually earned back in the first universe instead of a
-    /// plain orb overwriting it (§ user feedback: "make the user as what he
-    /// ate in the next universe"). Still gets the same combo streak, haptic,
-    /// sound, and "liquid" absorb-effect visuals as a real bite, so it never
-    /// reads as a different, lesser interaction.
-    private func absorbPlainOrb(_ definition: CollectibleDefinition, from position: CGPoint) {
-        absorbEffects.append(AbsorbEffect(startPosition: position, color: definition.primaryColor))
-
-        let now = Date()
-        if let last = lastEatAt, now.timeIntervalSince(last) <= GameEngine.comboWindow {
-            comboCount += 1
-        } else {
-            comboCount = 1
-        }
-        lastEatAt = now
-        let comboMultiplier = 1.0 + Double(min(comboCount - 1, 10)) * 0.1
-        if comboCount >= 2 {
-            comboBannerGeneration += 1
-            let generation = comboBannerGeneration
-            comboBannerText = "×\(comboCount) COMBO"
-            HapticsManager.shared.impact(.light)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
-                guard let self, self.comboBannerGeneration == generation else { return }
-                self.comboBannerText = nil
-            }
-        }
-
-        HapticsManager.shared.impact(.light)
-        AudioManager.shared.playEat()
-        player.lastEatenID = definition.id
-        player.profile.points += Int((Double(Self.pointsAward(for: definition.rarity)) * comboMultiplier).rounded())
-        player.size = min(PlayerState.maxRadius, player.size + max(0.3, CGFloat(definition.sizeEffect)))
-        saveManager.scheduleSave(player.profile)
-    }
-
     /// Points awarded per single eat, scaled with rarity — deliberately
     /// modest (this is meant to accrue over a whole session, not hand out
     /// the Store's membership redemption cost in a few bites).
@@ -539,6 +520,10 @@ final class GameEngine: ObservableObject {
 
     private func firePulseBurst() {
         let burstRadius: CGFloat = 90
+        if roundMode == .final {
+            eatGrowthDots(within: burstRadius)
+            return
+        }
         let caught = collectibles.filter { c in
             let dx = c.position.x - player.position.x
             let dy = c.position.y - player.position.y
@@ -554,40 +539,82 @@ final class GameEngine: ObservableObject {
 
     // MARK: - Spawning
 
-    /// Only the `.practice` room (the first universe) spawns the actual
-    /// icon catalog now — by the time the player reaches `.final` (the
-    /// second universe) they've already eaten from that variety, so it
-    /// reseeds plain blue filler orbs instead (§ user feedback: "they
-    /// already ate in the first universe so the second universe... they
-    /// will eat small blue dots"). Everything else about spawning —
-    /// the cadence, the cap — stays identical between the two.
     private func handleSpawning(dt: Double) {
         timeSinceSpawnCheck += dt
         guard timeSinceSpawnCheck > 0.4 else { return }
         timeSinceSpawnCheck = 0
-        guard collectibles.count < GameEngine.maxCollectibles else { return }
         if roundMode == .practice {
-            spawnCollectible()
+            for _ in 0..<min(12, max(0, GameEngine.maxCollectibles - collectibles.count)) { spawnCollectible() }
         } else {
-            spawnCollectible(forcedDefinition: CollectibleCatalog.plainOrb)
+            for _ in 0..<min(12, max(0, GameEngine.maxGrowthDots - growthDots.count)) { spawnGrowthDot() }
         }
     }
 
-    private func spawnCollectible(at fixedPosition: CGPoint? = nil, forcedRarity: Rarity? = nil, forcedDefinition: CollectibleDefinition? = nil) {
+    private func spawnCollectible(at fixedPosition: CGPoint? = nil, forcedRarity: Rarity? = nil) {
+        guard roundMode == .practice else { return }
         let definition: CollectibleDefinition
-        if let forcedDefinition {
-            definition = forcedDefinition
-        } else if let forcedRarity {
+        if let forcedRarity {
             definition = CollectibleCatalog.all.filter { $0.rarity == forcedRarity }.randomElement()
                 ?? CollectibleCatalog.randomWeighted()
         } else {
             definition = CollectibleCatalog.randomWeighted()
         }
-        let position = fixedPosition ?? CGPoint(
-            x: CGFloat.random(in: 40...(GameEngine.worldSize - 40)),
-            y: CGFloat.random(in: 40...(GameEngine.worldSize - 40))
-        )
+        let position = fixedPosition ?? foodPosition()
         collectibles.append(SpawnedCollectible(definition: definition, position: position))
+    }
+
+    /// Keep plenty of food near the player as well as across the world.
+    private func foodPosition() -> CGPoint {
+        if Double.random(in: 0...1) < 0.65 {
+            let angle = CGFloat.random(in: 0...(2 * .pi))
+            let distance = CGFloat.random(in: 60...900)
+            return CGPoint(x: min(max(player.position.x + cos(angle) * distance, 40), Self.worldSize - 40),
+                           y: min(max(player.position.y + sin(angle) * distance, 40), Self.worldSize - 40))
+        }
+        return CGPoint(x: CGFloat.random(in: 40...(Self.worldSize - 40)),
+                       y: CGFloat.random(in: 40...(Self.worldSize - 40)))
+    }
+
+    private func spawnGrowthDot() {
+        guard roundMode == .final else { return }
+        growthDots.append(GrowthDot(position: foodPosition()))
+    }
+
+    private func eatGrowthDots(within radius: CGFloat) {
+        let eaten = growthDots.filter { hypot($0.position.x - player.position.x, $0.position.y - player.position.y) <= radius }
+        guard !eaten.isEmpty else { return }
+        let ids = Set(eaten.map(\.id))
+        growthDots.removeAll { ids.contains($0.id) }
+        for dot in eaten {
+            absorbEffects.append(AbsorbEffect(startPosition: dot.position, color: .hex(0x4D96FF), magnitude: 4))
+        }
+        player.size = min(PlayerState.maxRadius, player.size + CGFloat(eaten.count) * 0.35)
+        player.profile.points += eaten.count
+        AudioManager.shared.playEat()
+        HapticsManager.shared.impact(.light)
+        saveManager.scheduleSave(player.profile)
+    }
+
+    private func checkRivalCollisions() {
+        guard roundMode == .final, rivals.count > 1 else { return }
+        var eaten = Set<UUID>()
+        for i in rivals.indices {
+            guard !eaten.contains(rivals[i].id) else { continue }
+            for j in rivals.indices where j > i {
+                guard !eaten.contains(rivals[j].id) else { continue }
+                let a = rivals[i], b = rivals[j]
+                guard hypot(a.position.x - b.position.x, a.position.y - b.position.y) <= (a.radius + b.radius) * 0.6 else { continue }
+                if b.radius > a.radius * 1.15 {
+                    rivals[i].radius = min(Self.rivalMaxRadius, a.radius + b.radius * 0.35)
+                    eaten.insert(b.id)
+                } else if a.radius > b.radius * 1.15 {
+                    rivals[j].radius = min(Self.rivalMaxRadius, b.radius + a.radius * 0.35)
+                    eaten.insert(a.id)
+                    break
+                }
+            }
+        }
+        rivals.removeAll { eaten.contains($0.id) }
     }
 
     private func makeWanderer() -> AmbientWanderer {
@@ -603,9 +630,6 @@ final class GameEngine: ObservableObject {
     // MARK: - Signals (§15, simplified for offline MVP)
 
     private func handleSignals(dt: Double) {
-        // Signals hand out a bonus legendary icon — the same "no icons in
-        // the final universe" rule above applies here too, so this whole
-        // system stays a `.practice`-room-only bonus.
         guard roundMode == .practice else { return }
         if let signal = activeSignal {
             if Date() > signal.expiresAt {

@@ -147,6 +147,9 @@ struct WhiteSpaceView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView(player: player)
         }
+        .onChange(of: engine.roundExpired) { expired in
+            if expired && engine.roundMode == .practice { onRoundComplete() }
+        }
         .onAppear { AudioManager.shared.startMusic("ambient") }
         .onDisappear { AudioManager.shared.stopMusic() }
     }
@@ -236,18 +239,16 @@ struct WhiteSpaceView: View {
         // per-item phase from its world position, so a whole field of them
         // doesn't blink in lockstep) — reads as a scattered little cluster of
         // living things rather than static icons stamped on the grid.
+        for dot in engine.growthDots {
+            let p = toScreen(dot.position)
+            guard isOnScreen(p, size: screenSize, margin: 8) else { continue }
+            context.fill(Path(ellipseIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)),
+                         with: .color(Color(red: 0.30, green: 0.59, blue: 1)))
+        }
         for c in engine.collectibles {
             let p = toScreen(c.position)
             guard isOnScreen(p, size: screenSize, margin: 40) else { continue }
-            // The final universe's plain filler pellets (§ user feedback:
-            // "they will eat small blue dots") have no icon glyph to carry
-            // their visibility — everything else does, via the emoji drawn
-            // on top below, which is why a normal icon's backing circle can
-            // get away with being a faint 0.18-opacity tint. An orb needs to
-            // actually read as "a small blue dot" on its own: smaller than a
-            // full icon and drawn at near-full opacity instead.
-            let isOrb = c.definition.icon.isEmpty
-            let radius: CGFloat = isOrb ? 7 : 13
+            let radius: CGFloat = 13
             let isRare = c.definition.rarity >= .rare
             let wobble = t * 4 + Double(p.x)
             let pulse: CGFloat = (isRare && !player.profile.reduceMotion) ? CGFloat(1.0 + 0.08 * sin(wobble)) : 1.0
@@ -285,7 +286,7 @@ struct WhiteSpaceView: View {
             // No ring/border — every collectible is a plain dot (rarity still
             // reads through color, glow, and the rare+ pulse, not an outline).
             DotRenderer.draw(popContext, center: bobbedP, radius: radius * pulse * CGFloat(popScale),
-                              color: c.definition.primaryColor.color.opacity(isOrb ? 0.92 : 0.18))
+                              color: c.definition.primaryColor.color.opacity(0.18))
 
             var textContext = popContext
             textContext.translateBy(x: bobbedP.x, y: bobbedP.y)
@@ -429,7 +430,8 @@ struct WhiteSpaceView: View {
         // Player dot, always screen-centered.
         let playerScreenPos = toScreen(player.position)
         let formColor = player.activeForm?.primaryColor.color
-        let color = DotRenderer.blendedPlayerColor(formColor: formColor, progress: player.activeFormProgress)
+        let color = engine.roundMode == .final ? (formColor ?? DotRenderer.blendedPlayerColor(formColor: nil, progress: 0))
+            : DotRenderer.blendedPlayerColor(formColor: formColor, progress: player.activeFormProgress)
 
         // A short fading wake of small, shrinking blobs at recent positions —
         // reads as a liquid streak trailing the dot while it's moving fast,
@@ -479,6 +481,10 @@ struct WhiteSpaceView: View {
                                 lookDirection: smoothedLook, time: t, eyeStyle: .whiteOnly,
                                 reduceMotion: player.profile.reduceMotion, eatPulse: arrivalFlashAmount,
                                 dotStyle: player.profile.selectedDotStyle, showGroundShadow: false)
+        if engine.roundMode == .final, let form = player.activeForm {
+            context.draw(Text(form.icon).font(.system(size: renderSize * 0.9)),
+                         at: CGPoint(x: playerScreenPos.x, y: playerScreenPos.y + renderSize * 0.35))
+        }
         if let username = player.profile.username {
             drawNameLabel(context, name: username, at: playerScreenPos, belowRadius: renderSize)
         }
@@ -779,6 +785,10 @@ struct WhiteSpaceView: View {
                 func toMap(_ p: CGPoint) -> CGPoint {
                     CGPoint(x: p.x / worldSize * size.width, y: p.y / worldSize * size.height)
                 }
+                for dot in engine.growthDots {
+                    let p = toMap(dot.position)
+                    context.fill(Path(ellipseIn: CGRect(x: p.x - 1, y: p.y - 1, width: 2, height: 2)), with: .color(.blue.opacity(0.5)))
+                }
                 for c in engine.collectibles {
                     let p = toMap(c.position)
                     context.fill(Path(ellipseIn: CGRect(x: p.x - 1, y: p.y - 1, width: 2, height: 2)),
@@ -815,17 +825,11 @@ struct WhiteSpaceView: View {
 
     private var roundExpiredOverlay: some View {
         Group {
-            if engine.roundExpired {
+            if engine.roundExpired && engine.roundMode == .final {
                 VStack(spacing: 6) {
-                    Text(engine.roundMode == .practice ? "🌌" : "⏱️").font(.system(size: 40))
-                    // § user feedback: "remove the phrase that says entering
-                    // another universe" — the practice room now hands off
-                    // with just the emoji + haptic, no caption; the real
-                    // round's "TIME'S UP" text is unrelated and stays.
-                    if engine.roundMode != .practice {
-                        Text("TIME'S UP")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                    }
+                    Text("⏱️").font(.system(size: 40))
+                    Text("TIME'S UP")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
                 }
                 .padding(20)
                 .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 18))
@@ -833,16 +837,8 @@ struct WhiteSpaceView: View {
                 .transition(.scale.combined(with: .opacity))
                 .onAppear {
                     HapticsManager.shared.impact(.medium)
-                    // The 30-second practice room hands straight off
-                    // to the real final room instead of quitting to the menu
-                    // — only a `.final` round's timer running out actually
-                    // ends the session.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
-                        if engine.roundMode == .practice {
-                            onRoundComplete()
-                        } else {
-                            onQuit()
-                        }
+                        onQuit()
                     }
                 }
             }
