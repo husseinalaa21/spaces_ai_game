@@ -73,13 +73,15 @@ struct OnboardingView: View {
     }
 }
 
-/// The beat between the 15-second practice room and the real final round
-/// (§ new — "should have a dropping/loading page too") — the same
-/// falling-dot moment as the very first intro above, but landing on a fixed
-/// congratulatory line instead of the narrative sequence, since the player
-/// already knows what a dot falling into a space means by the time they see
-/// this one. `RootView`'s `.levelTransition` phase shows this, then starts
-/// the final round once `onFinished` fires.
+/// The beat between the practice room and the real final round (§ new —
+/// "should have a dropping/loading page too") — the same falling-dot moment
+/// as the very first intro above, but landing on a fixed congratulatory line
+/// instead of the narrative sequence, since the player already knows what a
+/// dot falling into a space means by the time they see this one. Currently
+/// unused: `RootView` now moves straight from the practice room into the
+/// final round with no transition screen, per later user feedback ("remove
+/// the phrase that says entering another universe"). Left in place in case
+/// a transition beat is wanted again later.
 struct LevelTransitionView: View {
     // § user feedback: "remove the phrase that says entering another
     // universe" — this used to default to a line naming the "Final
