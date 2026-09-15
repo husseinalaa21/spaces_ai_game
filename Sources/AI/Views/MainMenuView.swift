@@ -512,7 +512,7 @@ private struct DotStylePreviewCanvas: View {
                 color: DotStyle.classic.swatchColor,
                 stretch: 0, angle: .zero, lookDirection: .zero, time: 0,
                 eyeStyle: .whiteOnly, reduceMotion: true, eatPulse: 0,
-                dotStyle: style, showGroundShadow: false
+                dotStyle: style
             )
         }
         .frame(width: diameter, height: diameter)

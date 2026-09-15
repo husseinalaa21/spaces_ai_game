@@ -55,7 +55,7 @@ enum DotRenderer {
     static func drawPlayer(_ context: GraphicsContext, center: CGPoint, radius: CGFloat, color: Color,
                             stretch: CGFloat, angle: Angle, lookDirection: CGVector, time: Double,
                             eyeStyle: EyeStyle = .withPupil, reduceMotion: Bool = false, eatPulse: Double = 0,
-                            dotStyle: DotStyle = .classic, showGroundShadow: Bool = false) {
+                            dotStyle: DotStyle = .classic) {
         // `stretch` is driven by a slightly underdamped spring on the caller
         // side (see `WhiteSpaceView.updateStretch`), so it can overshoot a
         // touch past 1 for a bit of jelly pop — clamp the *shape* math to a
@@ -88,7 +88,7 @@ enum DotRenderer {
         let backWobble = wobble(0.9, 2.1, 2.1)
         let topWobble = wobble(1.4, 2.9, 4.2)
         let bottomWobble = wobble(1.2, 2.4, 1.1)
-        // Kept for the shadow below, which only wants a coarse sense of how
+        // Kept for the body proportions below, which only want a coarse sense of how
         // deformed the body currently is, not the per-side detail above.
         let idleWobble = (frontWobble + backWobble + topWobble + bottomWobble) / 4
 
@@ -97,27 +97,6 @@ enum DotRenderer {
         // since the new ambient glow (drawn before the body itself) needs it too.
         let pulse = max(0, min(1, eatPulse))
 
-        // A soft, blurred ground shadow — flattened, offset a little below
-        // center, and deliberately NOT rotated/stretched with the body — so
-        // the dot reads as sitting on the grid instead of being a flat
-        // sticker painted onto it. Drawn first, underneath everything.
-        // Skipped entirely inside White Space itself (§ user feedback: "the
-        // border shadow around the dots" in the universe should go) — still
-        // used for the main menu's preview dot, which isn't sitting on any
-        // grid to ground it against.
-        if showGroundShadow {
-            var shadowContext = context
-            shadowContext.opacity = 0.15
-            shadowContext.addFilter(.blur(radius: radius * 0.18))
-            let shadowWidth = radius * (1.5 + shapeStretch * 0.4 + idleWobble * 0.5)
-            let shadowHeight = radius * 0.55
-            let shadowCenter = CGPoint(x: center.x, y: center.y + radius * 0.62)
-            shadowContext.fill(
-                Path(ellipseIn: CGRect(x: shadowCenter.x - shadowWidth / 2, y: shadowCenter.y - shadowHeight / 2,
-                                        width: shadowWidth, height: shadowHeight)),
-                with: .color(.black)
-            )
-        }
 
         // The cosmetic dot style (§28/§29, now a much bigger catalog — see
         // `DotStyle.visual`) tints the base transformation color and
@@ -281,16 +260,9 @@ enum DotRenderer {
         litRimContext.addFilter(.blur(radius: max(0.4, radius * 0.025)))
         litRimContext.stroke(litRim, with: .color(.white), style: StrokeStyle(lineWidth: max(1, radius * 0.07), lineCap: .round))
 
-        // A faint, darker fresnel rim on the opposite (shadow) side — the
-        // same "far-edge falloff" cue a professional 3D render uses for
-        // contrast, so the body reads as genuinely lit from one direction
-        // rather than evenly lit all the way around.
-        let shadowRim = bodyPath.trimmedPath(from: 0.55, to: 0.72)
-        var shadowRimContext = bodyContext
-        shadowRimContext.opacity = 0.32
-        shadowRimContext.addFilter(.blur(radius: max(0.4, radius * 0.03)))
-        shadowRimContext.stroke(shadowRim, with: .color(darkShade.mix(with: .black, amount: 0.4)),
-                                 style: StrokeStyle(lineWidth: max(1, radius * 0.06), lineCap: .round))
+        // No dark shadow rim on the body (§ new — "remove the shadow
+        // behind the dots"): the dot reads as a flat, bright shape lit only
+        // by its own highlight.
 
         // A slow inner sheen — a soft light band drifting back-to-front
         // across the body every few seconds, clipped to the outline — gives

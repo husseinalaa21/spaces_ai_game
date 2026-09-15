@@ -217,7 +217,7 @@ struct WhiteSpaceView: View {
             DotRenderer.drawPlayer(context, center: p, radius: rival.radius, color: rival.tint.color,
                                     stretch: 0, angle: .zero, lookDirection: rivalLook, time: t,
                                     eyeStyle: .whiteOnly, reduceMotion: player.profile.reduceMotion,
-                                    dotStyle: .classic, showGroundShadow: false)
+                                    dotStyle: .classic)
             drawNameLabel(context, name: rival.username, at: p, belowRadius: rival.radius)
         }
 
@@ -480,7 +480,7 @@ struct WhiteSpaceView: View {
                                 stretch: CGFloat(stretchAmount), angle: Angle(radians: stretchAngleRadians),
                                 lookDirection: smoothedLook, time: t, eyeStyle: .whiteOnly,
                                 reduceMotion: player.profile.reduceMotion, eatPulse: arrivalFlashAmount,
-                                dotStyle: player.profile.selectedDotStyle, showGroundShadow: false)
+                                dotStyle: player.profile.selectedDotStyle)
         if engine.roundMode == .final, let form = player.activeForm {
             context.draw(Text(form.icon).font(.system(size: renderSize * 0.9)),
                          at: CGPoint(x: playerScreenPos.x, y: playerScreenPos.y + renderSize * 0.35))
