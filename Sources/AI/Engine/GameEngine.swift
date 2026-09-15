@@ -622,7 +622,7 @@ final class GameEngine: ObservableObject {
             position: CGPoint(x: CGFloat.random(in: 0...GameEngine.worldSize),
                                y: CGFloat.random(in: 0...GameEngine.worldSize)),
             heading: CGFloat.random(in: 0...(2 * .pi)),
-            tint: RGBColor(r: 0.25, g: 0.25, b: 0.27),
+            tint: RGBColor(r: 0.62, g: 0.68, b: 0.86),
             radius: CGFloat.random(in: 10...20)
         )
     }

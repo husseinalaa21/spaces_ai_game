@@ -368,11 +368,12 @@ enum DotRenderer {
         // scarf, collar, cape, or medal per style — see `DotStyle.Accessory`)
         // — a simple drawn vector shape rather than another SF Symbol, so it
         // clearly reads as something worn low on the body rather than a
-        // second badge stacked on the head. Tinted with `darkShade` (the
-        // body's own richer, darker gradient tone) so it visibly contrasts
-        // with the hat's lighter `lightShade` tint just below.
+        // second badge stacked on the head. Tinted with its own colour a third
+        // of the way round the wheel from the body (§ new — worn items should
+        // read as clothing, not as a shaded part of the dot), which also keeps
+        // it distinct from the hat's own accent just below.
         drawAccessory(bodyContext, front: front, back: back, top: top, bottom: bottom,
-                      kind: visual.accessory, tint: darkShade)
+                      kind: visual.accessory, tint: styledColor.wornAccent(hueShift: 0.34))
 
         // A small worn accessory for premium Dot Styles (§ new — user asked
         // for something like "wearing a hat" so a premium pick reads at a
@@ -382,10 +383,12 @@ enum DotRenderer {
         // Real SF Symbols glyphs (§ user feedback: hand-drawn shapes didn't
         // read right — "look up in the libraries", i.e. the system icon set
         // already used elsewhere in this app, like the Store's pack icons)
-        // rather than custom vector paths, tinted with the body's own
-        // `lightShade` so it still visibly belongs to the same dot. `.classic`
+        // rather than custom vector paths, tinted with the hue opposite the
+        // body's (§ new — "make their colors different than the dots") so the
+        // hat reads as a worn object rather than part of the dot. `.classic`
         // gets nothing.
-        drawHat(bodyContext, top: top, hatSymbol: visual.hatSymbol, tint: lightShade)
+        drawHat(bodyContext, top: top, hatSymbol: visual.hatSymbol,
+                tint: styledColor.wornAccent(hueShift: 0.5))
     }
 
     /// Draws `DotStyle.Accessory` — a second worn item beyond the hat (§ new
@@ -681,6 +684,28 @@ extension Color {
                       green: g1 + (g2 - g1) * t,
                       blue: b1 + (b2 - b1) * t,
                       opacity: a1 + (a2 - a1) * t)
+    }
+
+    /// A colour deliberately *unlike* the body's, for worn items (§ new —
+    /// hats and clothing used to be tinted with the body's own light/dark
+    /// shades, so a hat read as a pale patch of the same dot rather than as
+    /// something the dot is wearing). Rotates the hue away from the body's
+    /// and forces a high brightness, so the item stays vivid and legible on
+    /// any dot — including the near-grey styles, which get enough saturation
+    /// here to show a real colour.
+    func wornAccent(hueShift: Double) -> Color {
+        #if canImport(UIKit)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(self).getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        var shifted = (Double(h) + hueShift).truncatingRemainder(dividingBy: 1.0)
+        if shifted < 0 { shifted += 1 }
+        return Color(hue: shifted,
+                      saturation: min(0.88, max(0.62, Double(s))),
+                      brightness: max(0.94, Double(b)),
+                      opacity: Double(a))
+        #else
+        return self
+        #endif
     }
 
     private var components: (Double, Double, Double, Double) {
