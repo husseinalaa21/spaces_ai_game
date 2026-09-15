@@ -10,6 +10,13 @@ settings:
     TARGETED_DEVICE_FAMILY: "1"          # iPhone only
     SUPPORTS_MACCATALYST: false
     IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+packages:
+  # High-performance SwiftUI particle system (MIT, iOS 15+) — used by
+  # DotEffectsLayer for the eat/absorb/level-up bursts.
+  Vortex:
+    url: https://github.com/twostraws/Vortex
+    from: 1.0.0
+
 targets:
   AI:
     type: application
@@ -17,6 +24,8 @@ targets:
     deploymentTarget: "16.0"
     sources:
       - path: Sources/AI
+    dependencies:
+      - package: Vortex
     resources:
       - path: Sources/AI/Resources/Assets.xcassets
       - path: Sources/AI/Resources/Sounds

@@ -783,13 +783,8 @@ enum DotRenderer {
             let scleraCornerRadius = eyeRadiusX * 0.8
             let scleraPath = Path(roundedRect: scleraRect, cornerRadius: scleraCornerRadius)
 
-            // A soft shadow seats the eye into the body's surface instead of
-            // it reading as a flat sticker floating on top (§ user feedback:
-            // "fix the eyes and look of the dot").
-            var eyeShadowContext = context
-            eyeShadowContext.opacity = 0.16
-            eyeShadowContext.addFilter(.blur(radius: eyeRadiusX * 0.5))
-            eyeShadowContext.fill(scleraPath, with: .color(.black))
+            // No shadow behind the eye (§ new — "remove the shadows from the
+            // dots"): the sclera sits flat on the body like everything else.
 
             // A subtle top-lit gradient instead of a flat white fill — the
             // same "lit from above" language as the body's own gradient —

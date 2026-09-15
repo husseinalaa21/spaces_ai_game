@@ -128,6 +128,11 @@ struct WhiteSpaceView: View {
             .background(currentPalette.background)
             .contentShape(Rectangle())
             .gesture(dragGesture(screenSize: screenSize))
+            // Particle bursts sit above the game canvas but below the HUD, so
+            // sparks never cover the score or the quit button.
+            .overlay {
+                DotEffectsLayer(engine: engine, player: player, screenSize: screenSize)
+            }
             .overlay(alignment: .top) { hud }
             .overlay(alignment: .topLeading) { quitButton }
             .overlay(alignment: .topTrailing) { minimap }
