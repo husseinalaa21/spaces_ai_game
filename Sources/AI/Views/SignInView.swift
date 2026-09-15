@@ -15,27 +15,27 @@ struct SignInView: View {
     let onSignedIn: () -> Void
 
     @State private var showPhraseSheet = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private let blueDot = Color(red: 41/255, green: 121/255, blue: 255/255)
-    private let blackDot = Color(white: 0.12)
 
     var body: some View {
         ZStack {
             Color.white.ignoresSafeArea()
 
-            VStack {
-                dotHeader
-                    .padding(.top, 70)
-                Spacer()
-            }
-
             VStack(spacing: 14) {
+                // Title first, then the logo beneath it.
                 Text("Spaces")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
                     .foregroundColor(.black)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .padding(.horizontal, 24)
+
+                // The game's actual logo — the same seven-dot cluster the
+                // splash screen and app icon use — rather than the row of
+                // five plain dots that used to stand in for it.
+                GameLogoMark(size: 150, animated: !reduceMotion)
+                    .padding(.bottom, 2)
 
                 Text("Sign in to keep your name on your dot,\nor jump straight in.")
                     .font(.system(size: 13))
@@ -97,15 +97,6 @@ struct SignInView: View {
         SpacechatPhraseView(authState: authState, onSignedIn: onSignedIn)
     }
 
-    private var dotHeader: some View {
-        HStack(spacing: 9) {
-            ForEach(0..<5, id: \.self) { i in
-                Circle()
-                    .fill(i == 2 ? blueDot : blackDot)
-                    .frame(width: 9, height: 9)
-            }
-        }
-    }
 
     private func continueAsGuest() {
         authState.continueAsGuest()

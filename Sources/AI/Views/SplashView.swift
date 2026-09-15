@@ -6,8 +6,17 @@ import SwiftUI
 /// pinned at the bottom while it loads. Purely a timed loading beat —
 /// `onFinished` decides where to go next (sign-in or straight into the
 /// game) based on whatever auth state it finds.
-struct SplashView: View {
-    let onFinished: () -> Void
+/// The game's logo: the seven-dot cluster from the app icon (Vision 1),
+/// drawn live rather than shipped as a flat image so it can shake.
+///
+/// One definition, used by both the splash screen and the sign-in page —
+/// having each screen redraw its own approximation of the logo is how the
+/// two drift apart.
+struct GameLogoMark: View {
+    var size: CGFloat = 220
+    /// Each dot jitters on its own timing. Off for static placements, and
+    /// respect Reduce Motion wherever it's on.
+    var animated: Bool = true
 
     private struct DotSpec {
         let position: CGPoint  // fraction (0...1) within the cluster square
@@ -34,43 +43,48 @@ struct SplashView: View {
     ]
 
     private let dotRadiusFraction: CGFloat = 0.045
-    private let clusterSize: CGFloat = 220
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { context, _ in
+                let t = animated ? timeline.date.timeIntervalSinceReferenceDate : 0
+                let radius = size * dotRadiusFraction
+                // Shake amplitude is authored against the 220pt splash
+                // cluster, so it scales with the mark instead of throwing
+                // small placements apart.
+                let scale = size / 220
+
+                for dot in dots {
+                    let shakeX = animated ? CGFloat(sin(t * dot.freqX + dot.phaseX)) * dot.amplitude * scale : 0
+                    let shakeY = animated ? CGFloat(cos(t * dot.freqY + dot.phaseY)) * dot.amplitude * scale : 0
+                    let center = CGPoint(
+                        x: dot.position.x * size + shakeX,
+                        y: dot.position.y * size + shakeY
+                    )
+                    // No drop shadow — the dots are flat everywhere else in
+                    // the app, and the logo should match them.
+                    DotRenderer.draw(context, center: center, radius: radius, color: dot.color)
+                }
+            }
+            .frame(width: size, height: size)
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+/// The app's launch screen: the game's logo, shaking, with "Powered by
+/// Spacechat" pinned at the bottom while it loads. Purely a timed loading
+/// beat — `onFinished` decides where to go next (sign-in or straight into
+/// the game) based on whatever auth state it finds.
+struct SplashView: View {
+    let onFinished: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
             Color.white.ignoresSafeArea()
 
-            TimelineView(.animation) { timeline in
-                Canvas { context, _ in
-                    let t = timeline.date.timeIntervalSinceReferenceDate
-                    let radius = clusterSize * dotRadiusFraction
-
-                    for dot in dots {
-                        let shakeX = CGFloat(sin(t * dot.freqX + dot.phaseX)) * dot.amplitude
-                        let shakeY = CGFloat(cos(t * dot.freqY + dot.phaseY)) * dot.amplitude
-                        let center = CGPoint(
-                            x: dot.position.x * clusterSize + shakeX,
-                            y: dot.position.y * clusterSize + shakeY
-                        )
-
-                        // Soft shadow toward the bottom-left, peeking past
-                        // the dot's edge — mirrors the top-right highlight
-                        // baked into DotRenderer, same as the real logo art.
-                        let shadowCenter = CGPoint(x: center.x - radius * 0.55, y: center.y + radius * 0.55)
-                        let shadowRadius = radius * 0.7
-                        var shadowContext = context
-                        shadowContext.opacity = 0.28
-                        shadowContext.fill(
-                            Path(ellipseIn: CGRect(x: shadowCenter.x - shadowRadius, y: shadowCenter.y - shadowRadius,
-                                                    width: shadowRadius * 2, height: shadowRadius * 2)),
-                            with: .color(.black)
-                        )
-
-                        DotRenderer.draw(context, center: center, radius: radius, color: dot.color)
-                    }
-                }
-                .frame(width: clusterSize, height: clusterSize)
-            }
+            GameLogoMark(size: 220, animated: !reduceMotion)
 
             VStack(spacing: 10) {
                 Spacer()
