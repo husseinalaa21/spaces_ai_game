@@ -184,6 +184,13 @@ struct MainMenuView: View {
         // appears — a subscription can be cancelled, lapse, be refunded or be
         // bought on another device entirely outside this app.
         .task {
+            // Set before any product load so a transaction redelivered at
+            // launch (a crash mid-purchase, a late Ask to Buy approval) is
+            // credited rather than finished silently.
+            store.grantPoints = { points in
+                player.profile.points += points
+                save()
+            }
             await store.loadProduct()
             await store.refreshEntitlement()
             player.refreshPremium(subscribed: store.isSubscribed)
@@ -1057,10 +1064,14 @@ private struct StoreView: View {
     /// and extra points to the mega... like 3x"). Before this, Value was
     /// actually *worse* value per dollar than Starter, so the middle tier had
     /// no reason to exist.
-    private let pointPacks: [(name: String, points: Int, multiplier: Int, price: String, icon: String, color: Color, highlight: Bool)] = [
-        ("Starter Pack", 500, 1, "$0.99", "shippingbox.fill", IconPalette.blue, false),
-        ("Value Pack", 3000, 2, "$2.99", "gift.fill", IconPalette.pink, false),
-        ("Mega Pack", 12000, 3, "$7.99", "crown.fill", IconPalette.gold, true)
+    /// `productID` must match App Store Connect exactly — including the
+    /// Starter Pack's, which really is the string "0.99". `fallbackPrice` is
+    /// only shown for the instant before StoreKit returns the real localized
+    /// price; the live one always wins.
+    private let pointPacks: [(name: String, productID: String, points: Int, multiplier: Int, fallbackPrice: String, icon: String, color: Color, highlight: Bool)] = [
+        ("Starter Pack", "0.99", 500, 1, "$0.99", "shippingbox.fill", IconPalette.blue, false),
+        ("Value Pack", "value", 3000, 2, "$2.99", "gift.fill", IconPalette.pink, false),
+        ("Mega Pack", "mega", 12000, 3, "$7.99", "crown.fill", IconPalette.gold, true)
     ]
 
     var body: some View {
@@ -1074,7 +1085,7 @@ private struct StoreView: View {
                     pointPacksSection
                     earnPointsSection
 
-                    Text("Premium is a real App Store subscription. Point Packs are not wired to StoreKit yet and only change your local saved profile.")
+                    Text("Premium and Point Packs are real App Store purchases. Points are consumable and are not restored on a new device.")
                         .font(.system(size: 12))
                         .foregroundColor(.black.opacity(0.4))
                         .padding(.top, 4)
@@ -1083,6 +1094,10 @@ private struct StoreView: View {
             }
             .background(Color(white: 0.96).ignoresSafeArea())
             .task {
+                store.grantPoints = { points in
+                    player.profile.points += points
+                    save()
+                }
                 await store.loadProduct()
                 await store.refreshEntitlement()
                 player.refreshPremium(subscribed: store.isSubscribed)
@@ -1321,7 +1336,7 @@ private struct StoreView: View {
                                 }
                             }
                             Spacer()
-                            Text(pack.price)
+                            Text(store.price(for: pack.productID) ?? pack.fallbackPrice)
                                 .font(.system(size: 14, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 14).padding(.vertical, 8)
@@ -1346,7 +1361,7 @@ private struct StoreView: View {
                 }
             }
 
-            Text("Test Mode — buying a pack just adds Points to your local profile, no real payment is taken.")
+            Text("Points are added to your profile as soon as the purchase completes.")
                 .font(.system(size: 11))
                 .foregroundColor(.black.opacity(0.4))
         }
@@ -1408,10 +1423,15 @@ private struct StoreView: View {
         }
     }
 
-    private func buyPointPack(_ pack: (name: String, points: Int, multiplier: Int, price: String, icon: String, color: Color, highlight: Bool)) {
-        player.profile.points += pack.points
-        save()
-        HapticsManager.shared.impact(.light)
+    /// Real App Store purchase of a consumable. Points are credited by
+    /// `StoreManager`'s redeem path (wired to `grantPoints` in `.task`), not
+    /// here, so a transaction redelivered after a crash still pays out.
+    private func buyPointPack(_ pack: (name: String, productID: String, points: Int, multiplier: Int, fallbackPrice: String, icon: String, color: Color, highlight: Bool)) {
+        Task {
+            if await store.purchasePointPack(id: pack.productID) {
+                HapticsManager.shared.impact(.light)
+            }
+        }
     }
 }
 

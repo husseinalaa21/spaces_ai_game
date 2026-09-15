@@ -31,7 +31,28 @@ final class StoreManager: ObservableObject {
     /// Store Connect also requires this exact URL in App Information.
     static let privacyPolicyURL = URL(string: "https://husseinalaa21.github.io/spaces_ai_game/privacy.html")!
 
+    /// Consumable Point Packs, keyed by Product ID exactly as registered in
+    /// App Store Connect, mapped to the Points each one credits.
+    ///
+    /// NOTE: the Starter Pack's ID really is the string "0.99" — that's what
+    /// the product was created with. Product IDs are permanent once a product
+    /// has been submitted, so this must keep matching it character for
+    /// character no matter how odd it reads.
+    static let pointPackGrants: [String: Int] = [
+        "0.99": 500,
+        "value": 3000,
+        "mega": 12000
+    ]
+
+    /// Credits Points for a consumable purchase. Set once by the app so that
+    /// a transaction redelivered through `Transaction.updates` — after a
+    /// crash, or an Ask to Buy approval arriving later — still pays out
+    /// rather than being finished silently.
+    var grantPoints: ((Int) -> Void)?
+
     @Published private(set) var premiumProduct: Product?
+    /// Loaded consumables, keyed by Product ID.
+    @Published private(set) var pointPackProducts: [String: Product] = [:]
     @Published private(set) var isSubscribed = false
     @Published private(set) var isLoadingProduct = false
     @Published private(set) var purchaseInFlight = false
@@ -50,7 +71,7 @@ final class StoreManager: ObservableObject {
         updatesTask = Task { [weak self] in
             for await result in Transaction.updates {
                 guard let self else { return }
-                await self.finish(result)
+                await self.redeem(result)
                 await self.refreshEntitlement()
             }
         }
@@ -63,12 +84,18 @@ final class StoreManager: ObservableObject {
     // MARK: - Loading
 
     func loadProduct() async {
-        guard premiumProduct == nil else { return }
+        guard premiumProduct == nil || pointPackProducts.isEmpty else { return }
         isLoadingProduct = true
         defer { isLoadingProduct = false }
         do {
-            let products = try await Product.products(for: [StoreManager.premiumProductID])
-            premiumProduct = products.first
+            let ids = Set([StoreManager.premiumProductID]).union(StoreManager.pointPackGrants.keys)
+            let products = try await Product.products(for: ids)
+            premiumProduct = products.first { $0.id == StoreManager.premiumProductID }
+            pointPackProducts = Dictionary(
+                uniqueKeysWithValues: products
+                    .filter { StoreManager.pointPackGrants[$0.id] != nil }
+                    .map { ($0.id, $0) }
+            )
             if premiumProduct == nil {
                 // Almost always one of: the Paid Applications Agreement isn't
                 // active, the product isn't "Ready to Submit", or the bundle
@@ -113,7 +140,7 @@ final class StoreManager: ObservableObject {
             let result = try await product.purchase()
             switch result {
             case .success(let verification):
-                await finish(verification)
+                await redeem(verification)
                 await refreshEntitlement()
                 return isSubscribed
             case .userCancelled:
@@ -149,10 +176,56 @@ final class StoreManager: ObservableObject {
         }
     }
 
-    private func finish(_ result: VerificationResult<Transaction>) async {
+    /// Buys one consumable Point Pack. Points are credited by `redeem`, not
+    /// here, so the payout path is identical whether the transaction arrives
+    /// from this call or is redelivered later by `Transaction.updates`.
+    @discardableResult
+    func purchasePointPack(id: String) async -> Bool {
+        guard let product = pointPackProducts[id] else {
+            errorMessage = "That pack isn't available right now."
+            return false
+        }
+        guard !purchaseInFlight else { return false }
+        purchaseInFlight = true
+        defer { purchaseInFlight = false }
+
+        do {
+            switch try await product.purchase() {
+            case .success(let verification):
+                await redeem(verification)
+                return true
+            case .userCancelled:
+                return false
+            case .pending:
+                errorMessage = "Your purchase is pending approval."
+                return false
+            @unknown default:
+                return false
+            }
+        } catch {
+            errorMessage = "The purchase couldn't be completed. Please try again."
+            return false
+        }
+    }
+
+    /// Localized price for a Point Pack, or nil until its product loads.
+    func price(for productID: String) -> String? {
+        pointPackProducts[productID]?.displayPrice
+    }
+
+    /// Credits a consumable's Points (once) and closes out the transaction.
+    ///
+    /// A consumable must be finished only AFTER its content is delivered —
+    /// finishing first means a crash in between loses the purchase with no
+    /// way for Apple to redeliver it.
+    private func redeem(_ result: VerificationResult<Transaction>) async {
         // Unverified transactions failed Apple's own signature check — never
         // grant anything for them, and never finish them either.
         guard case .verified(let transaction) = result else { return }
+        if transaction.revocationDate == nil,
+           let points = StoreManager.pointPackGrants[transaction.productID] {
+            grantPoints?(points)
+        }
         await transaction.finish()
     }
 
