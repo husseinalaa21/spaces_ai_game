@@ -16,10 +16,16 @@ struct GameHubView: View {
     var save: () -> Void
     let onPlay: () -> Void
 
+    /// Owned here so the menu's paywall and Settings' subscription rows are
+    /// the same StoreManager — two instances would mean two product loads and
+    /// two transaction listeners racing each other.
+    @StateObject private var store = StoreManager()
+
     enum Tab: Int, CaseIterable, Identifiable {
         case home = 0
         case spacechatAI = 1
         case messages = 2
+        case settings = 3
         var id: Int { rawValue }
     }
 
@@ -56,11 +62,14 @@ struct GameHubView: View {
                 switch tab {
                 case .home:
                     MainMenuView(player: player, authState: authState, sync: sync,
-                                 save: save, onPlay: onPlay)
+                                 store: store, save: save, onPlay: onPlay)
                 case .spacechatAI:
                     SpacechatAIView(authState: authState)
                 case .messages:
                     MessagesView(authState: authState)
+                case .settings:
+                    SettingsPageView(player: player, authState: authState,
+                                     sync: sync, store: store, save: save)
                 }
             }
             .transition(.asymmetric(
@@ -101,6 +110,10 @@ struct GameHubView: View {
                 Image(systemName: "bubble.left.and.bubble.right.fill")
                     .font(.system(size: 16, weight: .semibold))
             }
+            tabButton(.settings) {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 17, weight: .semibold))
+            }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
@@ -118,7 +131,7 @@ struct GameHubView: View {
         } label: {
             icon()
                 .foregroundColor(tab == target ? .black : .black.opacity(0.32))
-                .frame(width: 54, height: 34)
+                .frame(width: 46, height: 34)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -46,10 +46,9 @@ struct MainMenuView: View {
     var save: () -> Void = {}
     let onPlay: () -> Void
 
-    /// Owned here and handed down to every screen that sells Premium, so
-    /// there's exactly one product load and one transaction listener for the
-    /// whole session.
-    @StateObject private var store = StoreManager()
+    /// Owned by `GameHubView` and shared with Settings, so there is exactly
+    /// one product load and one transaction listener for the whole session.
+    @ObservedObject var store: StoreManager
 
     @State private var showDotStudio = false
     @State private var showPremiumSheet = false
@@ -952,7 +951,7 @@ private struct CosmeticBrowseSheet: View {
 /// requires the auto-renew disclosure, a Restore Purchases control and
 /// reachable Terms/Privacy links on any screen that sells a subscription
 /// (Guideline 3.1.2), so all four live here.
-private struct PremiumUnlockSheet: View {
+struct PremiumUnlockSheet: View {
     @ObservedObject var store: StoreManager
     @ObservedObject var player: PlayerState
     @ObservedObject var authState: AuthState
