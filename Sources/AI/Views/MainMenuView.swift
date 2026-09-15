@@ -185,7 +185,8 @@ struct MainMenuView: View {
                     pointsBadge
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 54)
+                // Clears the hub banner floating above all three pages.
+                .padding(.top, 66)
                 Spacer()
             }
             .opacity(hasAppeared ? 1 : 0)

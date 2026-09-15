@@ -61,8 +61,8 @@ struct RootView: View {
                 }
 
             case .home:
-                MainMenuView(player: player, authState: authState, sync: sync,
-                             save: { saveManager.saveNow(player.profile) }) {
+                GameHubView(player: player, authState: authState, sync: sync,
+                            save: { saveManager.saveNow(player.profile) }) {
                     withAnimation { phase = .intro }
                 }
 
