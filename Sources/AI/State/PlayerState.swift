@@ -51,6 +51,13 @@ struct PlayerProfile: Codable {
     var lastDailyClaimDate: Date? = nil
     var dailyStreak: Int = 0
 
+    /// Points earned through play (and the daily reward) so far today, with
+    /// the day they were counted against. Together these enforce
+    /// `PlayerState.dailyEarnCap`. Purchased Points are deliberately not
+    /// counted here — you can always spend money, the cap is only on earning.
+    var pointsEarnedToday: Int = 0
+    var pointsEarnedDate: Date? = nil
+
     /// A "davi_32"-style handle shown under the player's own dot in the
     /// universe (§ new — matches the names shown under every rival dot) and
     /// editable from the main menu. Optional, and decoded as such, so a
@@ -97,6 +104,8 @@ struct PlayerProfile: Codable {
         points = try c.decodeIfPresent(Int.self, forKey: .points) ?? 0
         lastDailyClaimDate = try c.decodeIfPresent(Date.self, forKey: .lastDailyClaimDate)
         dailyStreak = try c.decodeIfPresent(Int.self, forKey: .dailyStreak) ?? 0
+        pointsEarnedToday = try c.decodeIfPresent(Int.self, forKey: .pointsEarnedToday) ?? 0
+        pointsEarnedDate = try c.decodeIfPresent(Date.self, forKey: .pointsEarnedDate)
         username = try c.decodeIfPresent(String.self, forKey: .username)
     }
 }
@@ -175,7 +184,12 @@ final class PlayerState: ObservableObject {
     /// The 7-day ladder shown in `DailyRewardSheet` — deliberately fixed and
     /// short rather than scaling forever, so a long streak never quietly
     /// implies a bigger next reward than what's actually paid out.
-    static let dailyRewardLadder: [Int] = [20, 30, 45, 60, 80, 120, 200]
+    /// Most a player can *earn* in one calendar day, across gameplay and the
+    /// daily reward together (§ new — "max 70 a day"). Purchased Points are
+    /// uncapped; this only limits free accrual.
+    static let dailyEarnCap = 70
+
+    static let dailyRewardLadder: [Int] = [10, 12, 15, 18, 20, 25, 30]
 
     /// Which ladder day (0-based) the *next* claim would land on.
     var nextDailyRewardIndex: Int {
@@ -200,13 +214,16 @@ final class PlayerState: ObservableObject {
     @discardableResult
     func claimDailyReward() -> Int {
         guard canClaimDailyReward else { return 0 }
+        // Don't burn the day's claim against a full allowance — leaving it
+        // unclaimed means it's still there once the cap rolls over, instead
+        // of the button silently consuming the streak for zero Points.
+        guard pointsRemainingToday > 0 else { return 0 }
         if let last = profile.lastDailyClaimDate, !Calendar.current.isDateInYesterday(last) {
             // More than one day since the last claim — the streak doesn't
             // carry over, but nothing already earned is ever taken away.
             profile.dailyStreak = 0
         }
-        let amount = PlayerState.dailyRewardLadder[nextDailyRewardIndex]
-        profile.points += amount
+        let amount = awardPoints(PlayerState.dailyRewardLadder[nextDailyRewardIndex])
         profile.dailyStreak += 1
         profile.lastDailyClaimDate = Date()
         return amount
@@ -215,6 +232,40 @@ final class PlayerState: ObservableObject {
     // MARK: - Per-item cosmetic purchases (§ new — buy a single Universe or
     // Dot Style with Points, alongside the existing "unlock everything" AI+
     // subscription rather than instead of it).
+
+    // MARK: - Earning (daily-capped)
+
+    /// The single funnel every *earned* Point goes through — gameplay awards
+    /// and the daily reward alike. Rolls the day's tally over on a calendar
+    /// boundary and clamps the grant to whatever is left of
+    /// `dailyEarnCap`, returning what was actually credited so callers can
+    /// show the real number rather than the number they asked for.
+    ///
+    /// Points bought with money bypass this entirely.
+    @discardableResult
+    func awardPoints(_ amount: Int) -> Int {
+        guard amount > 0 else { return 0 }
+        rollOverEarnedDayIfNeeded()
+        let granted = min(amount, max(0, PlayerState.dailyEarnCap - profile.pointsEarnedToday))
+        guard granted > 0 else { return 0 }
+        profile.points += granted
+        profile.pointsEarnedToday += granted
+        profile.pointsEarnedDate = Date()
+        return granted
+    }
+
+    /// How much of today's earning allowance is still available.
+    var pointsRemainingToday: Int {
+        guard let last = profile.pointsEarnedDate,
+              Calendar.current.isDateInToday(last) else { return PlayerState.dailyEarnCap }
+        return max(0, PlayerState.dailyEarnCap - profile.pointsEarnedToday)
+    }
+
+    private func rollOverEarnedDayIfNeeded() {
+        if let last = profile.pointsEarnedDate, !Calendar.current.isDateInToday(last) {
+            profile.pointsEarnedToday = 0
+        }
+    }
 
     /// Mirrors Apple's live subscription state onto the saved profile.
     /// Premium is the subscription and nothing else — there's no Points

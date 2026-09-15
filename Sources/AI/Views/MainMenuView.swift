@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthenticationServices
 
 /// A subtle "press" feel for buttons that don't already animate their own
 /// state — scales down and dims slightly while held, springs back on
@@ -40,6 +41,7 @@ enum IconPalette {
 /// player taps Play (`RootView` doesn't build the world until then).
 struct MainMenuView: View {
     @ObservedObject var player: PlayerState
+    @ObservedObject var authState: AuthState
     var save: () -> Void = {}
     let onPlay: () -> Void
 
@@ -201,12 +203,12 @@ struct MainMenuView: View {
             save()
         }
         .sheet(isPresented: $showPremiumSheet) {
-            PremiumUnlockSheet(store: store, player: player, save: save) {
+            PremiumUnlockSheet(store: store, player: player, authState: authState, save: save) {
                 showPremiumSheet = false
             }
         }
         .sheet(isPresented: $showStore) {
-            StoreView(player: player, store: store, save: save)
+            StoreView(player: player, store: store, authState: authState, save: save)
         }
         .sheet(isPresented: $showDailyReward) {
             DailyRewardSheet(player: player, save: save)
@@ -824,7 +826,9 @@ private struct CosmeticBrowseSheet: View {
 private struct PremiumUnlockSheet: View {
     @ObservedObject var store: StoreManager
     @ObservedObject var player: PlayerState
+    @ObservedObject var authState: AuthState
     var save: () -> Void
+    @State private var showSignInGate = false
     var onPurchased: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -911,9 +915,14 @@ private struct PremiumUnlockSheet: View {
         }
         .presentationDetents([.fraction(0.72)])
         .task { await store.loadProduct() }
+        .sheet(isPresented: $showSignInGate) { SignInRequiredSheet(authState: authState) }
     }
 
     private func buy() {
+        // A purchase is tied to an account, not a device: without one there's
+        // nothing to attach Premium to when the player reinstalls or picks up
+        // another phone.
+        guard !authState.isGuest else { showSignInGate = true; return }
         Task {
             let ok = await store.purchasePremium()
             player.refreshPremium(subscribed: store.isSubscribed)
@@ -984,7 +993,7 @@ private struct DailyRewardSheet: View {
             .padding(.horizontal, 12)
 
             Button(action: claim) {
-                Text(player.canClaimDailyReward ? "Claim +\(player.nextDailyRewardAmount) Points" : "Come back tomorrow")
+                Text(claimButtonTitle)
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .frame(width: 240, height: 48)
@@ -992,7 +1001,7 @@ private struct DailyRewardSheet: View {
             .background(player.canClaimDailyReward ? Color.black : Color.black.opacity(0.25))
             .clipShape(Capsule())
             .buttonStyle(PressableButtonStyle())
-            .disabled(!player.canClaimDailyReward)
+            .disabled(!player.canClaimDailyReward || player.pointsRemainingToday == 0)
             .padding(.top, 4)
 
             Button("Close") { dismiss() }
@@ -1037,11 +1046,78 @@ private struct DailyRewardSheet: View {
         }
     }
 
+    private var claimButtonTitle: String {
+        guard player.canClaimDailyReward else { return "Come back tomorrow" }
+        guard player.pointsRemainingToday > 0 else { return "Daily limit reached — claim tomorrow" }
+        return "Claim +\(min(player.nextDailyRewardAmount, player.pointsRemainingToday)) Points"
+    }
+
     private func claim() {
         let amount = player.claimDailyReward()
         guard amount > 0 else { return }
+        // Save straight away: the claim also advanced the streak and stamped
+        // today's date, so losing it to a crash would hand out the reward
+        // twice.
         save()
         HapticsManager.shared.success()
+    }
+}
+
+/// Shown when a guest taps anything that costs real money. A purchase is
+/// tied to an Apple account, not to a device — without one there'd be
+/// nothing to attach Premium to when the player reinstalls or moves to
+/// another phone, and no way to restore it.
+private struct SignInRequiredSheet: View {
+    @ObservedObject var authState: AuthState
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Capsule()
+                .fill(Color.black.opacity(0.15))
+                .frame(width: 36, height: 4)
+                .padding(.top, 10)
+
+            Image(systemName: "person.crop.circle.badge.checkmark")
+                .font(.system(size: 34, weight: .medium))
+                .foregroundColor(IconPalette.blue)
+                .padding(.top, 6)
+
+            Text("Sign in to purchase")
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+
+            Text("Purchases are tied to your Apple Account, so they can be restored if you reinstall or switch devices. Playing stays free without an account.")
+                .font(.system(size: 13))
+                .foregroundColor(.black.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 30)
+
+            SignInWithAppleButton(.signIn) { request in
+                request.requestedScopes = [.fullName]
+            } onCompletion: { result in
+                if authState.handleAppleSignIn(result) { dismiss() }
+            }
+            .signInWithAppleButtonStyle(.black)
+            .frame(width: 260, height: 50)
+            .clipShape(Capsule())
+            .padding(.top, 4)
+
+            if let message = authState.errorMessage {
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundColor(.red.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 30)
+            }
+
+            Button("Not Now") { dismiss() }
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.black.opacity(0.5))
+                .padding(.bottom, 14)
+
+            Spacer(minLength: 0)
+        }
+        .presentationDetents([.fraction(0.55)])
     }
 }
 
@@ -1054,7 +1130,9 @@ private struct DailyRewardSheet: View {
 private struct StoreView: View {
     @ObservedObject var player: PlayerState
     @ObservedObject var store: StoreManager
+    @ObservedObject var authState: AuthState
     var save: () -> Void
+    @State private var showSignInGate = false
     @Environment(\.dismiss) private var dismiss
 
     private let gold = DotStyle.gold.swatchColor
@@ -1104,6 +1182,7 @@ private struct StoreView: View {
             }
             .navigationTitle("Store")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showSignInGate) { SignInRequiredSheet(authState: authState) }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
@@ -1376,6 +1455,10 @@ private struct StoreView: View {
                 earnRow(icon: "sparkles", color: IconPalette.purple, text: "Eat collectibles — more Points for rarer finds")
                 earnRow(icon: "checkmark.seal.fill", color: IconPalette.green, text: "Complete a form — +30 Points")
                 earnRow(icon: "arrow.up.circle.fill", color: IconPalette.blue, text: "Level up — +15 Points")
+                earnRow(icon: "clock.badge.checkmark.fill", color: IconPalette.orange,
+                        text: player.pointsRemainingToday > 0
+                            ? "\(player.pointsRemainingToday) of \(PlayerState.dailyEarnCap) Points left to earn today"
+                            : "Daily earning limit reached — resets tomorrow")
             }
             .padding(16)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
@@ -1406,6 +1489,7 @@ private struct StoreView: View {
     /// entitlement comes back from Apple and is folded in by
     /// `PlayerState.refreshPremium(subscribed:)`.
     private func unlockPremium() {
+        guard !authState.isGuest else { showSignInGate = true; return }
         Task {
             let ok = await store.purchasePremium()
             player.refreshPremium(subscribed: store.isSubscribed)
@@ -1427,6 +1511,7 @@ private struct StoreView: View {
     /// `StoreManager`'s redeem path (wired to `grantPoints` in `.task`), not
     /// here, so a transaction redelivered after a crash still pays out.
     private func buyPointPack(_ pack: (name: String, productID: String, points: Int, multiplier: Int, fallbackPrice: String, icon: String, color: Color, highlight: Bool)) {
+        guard !authState.isGuest else { showSignInGate = true; return }
         Task {
             if await store.purchasePointPack(id: pack.productID) {
                 HapticsManager.shared.impact(.light)

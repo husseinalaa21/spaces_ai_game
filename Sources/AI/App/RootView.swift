@@ -47,7 +47,8 @@ struct RootView: View {
                 }
 
             case .home:
-                MainMenuView(player: player, save: { saveManager.saveNow(player.profile) }) {
+                MainMenuView(player: player, authState: authState,
+                             save: { saveManager.saveNow(player.profile) }) {
                     withAnimation { phase = .intro }
                 }
 

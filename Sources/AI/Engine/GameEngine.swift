@@ -329,7 +329,7 @@ final class GameEngine: ObservableObject {
                 // feedback: eating a smaller dot should visibly "make you
                 // bigger") — eating another dot is the headline move here.
                 player.size = min(PlayerState.maxRadius, player.size + rival.radius * 0.35)
-                player.profile.points += 5
+                player.awardPoints(10)
                 saveManager.scheduleSave(player.profile)
                 HapticsManager.shared.impact(.medium)
                 AudioManager.shared.playEat()
@@ -442,7 +442,8 @@ final class GameEngine: ObservableObject {
         // toward AI+ Premium besides the direct/mock-purchase path in the
         // Store. Bonuses for the bigger milestones are added further below,
         // once we know whether this bite also completed a form or leveled up.
-        player.profile.points += Int((Double(Self.pointsAward(for: definition.rarity)) * comboMultiplier).rounded())
+        player.awardPoints(min(Self.maxSingleAward,
+                              Int((Double(Self.pointsAward(for: definition.rarity)) * comboMultiplier).rounded())))
 
         // What you eat nudges your size, not just your form (§ user feedback:
         // "the dot should get bigger when eat") — every single bite grows
@@ -460,13 +461,13 @@ final class GameEngine: ObservableObject {
         if didCompleteForm {
             player.size = min(player.size + 3, PlayerState.maxRadius)
             player.formCompleteBanner = definition
-            player.profile.points += 30
+            player.awardPoints(20)
             AudioManager.shared.playFormComplete()
             // (haptic success already fires from `formCompleteOverlay.onAppear`)
         }
         if player.profile.intelligenceLevel > levelBefore {
             let newLevel = player.profile.intelligenceLevel
-            player.profile.points += 15
+            player.awardPoints(15)
             HapticsManager.shared.impact(.medium)
             if didCompleteForm {
                 // Completing a form often crosses a level threshold in the same
@@ -489,14 +490,19 @@ final class GameEngine: ObservableObject {
     /// the Store's membership redemption cost in a few bites).
     static func pointsAward(for rarity: Rarity) -> Int {
         switch rarity {
-        case .common: return 1
-        case .uncommon: return 2
-        case .rare: return 4
-        case .epic: return 8
-        case .legendary: return 15
-        case .mythic: return 30
+        case .common: return 10
+        case .uncommon: return 12
+        case .rare: return 14
+        case .epic: return 16
+        case .legendary: return 18
+        case .mythic: return 20
         }
     }
+
+    /// No single award may exceed this (§ new — "something like 10 - 20"),
+    /// which also stops the combo multiplier from compounding a mythic bite
+    /// into most of a day's allowance in one go.
+    static let maxSingleAward = 20
 
     // MARK: - Abilities
 
@@ -589,7 +595,7 @@ final class GameEngine: ObservableObject {
             absorbEffects.append(AbsorbEffect(startPosition: dot.position, color: .hex(0x4D96FF), magnitude: 4))
         }
         player.size = min(PlayerState.maxRadius, player.size + CGFloat(eaten.count) * 0.35)
-        player.profile.points += eaten.count
+        player.awardPoints(min(Self.maxSingleAward, eaten.count * 2))
         AudioManager.shared.playEat()
         HapticsManager.shared.impact(.light)
         saveManager.scheduleSave(player.profile)
