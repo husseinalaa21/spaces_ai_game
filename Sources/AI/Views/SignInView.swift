@@ -14,6 +14,8 @@ struct SignInView: View {
     @ObservedObject var authState: AuthState
     let onSignedIn: () -> Void
 
+    @State private var showPhraseSheet = false
+
     private let blueDot = Color(red: 41/255, green: 121/255, blue: 255/255)
     private let blackDot = Color(white: 0.12)
 
@@ -56,6 +58,22 @@ struct SignInView: View {
                 .clipShape(Capsule())
                 .padding(.top, 12)
 
+                // Second route, directly under Apple: the same Spacechat
+                // recovery phrase, against the same server — so one account
+                // covers both apps.
+                Button { showPhraseSheet = true } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "key.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Continue with Spacechat phrase")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(.black)
+                    .frame(width: 260, height: 50)
+                }
+                .overlay(Capsule().stroke(Color.black.opacity(0.18), lineWidth: 1.5))
+                .clipShape(Capsule())
+
                 Button(action: continueAsGuest) {
                     Text("Continue without an account")
                         .font(.system(size: 14, weight: .medium, design: .rounded))
@@ -72,6 +90,11 @@ struct SignInView: View {
                 }
             }
         }
+        .sheet(isPresented: $showPhraseSheet) { phraseSheet }
+    }
+
+    private var phraseSheet: some View {
+        SpacechatPhraseView(authState: authState, onSignedIn: onSignedIn)
     }
 
     private var dotHeader: some View {

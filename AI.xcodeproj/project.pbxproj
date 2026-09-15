@@ -26,6 +26,9 @@
 		C694C3C29E7F1BAB1BD2E31E /* Collectible.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B5E6BD990F8A126FFDB1FE /* Collectible.swift */; };
 		CE11FF666039074155A4FA32 /* levelup.wav in Resources */ = {isa = PBXBuildFile; fileRef = B0B07A21B5145848FF935927 /* levelup.wav */; };
 		D384B32AC1D483C111E31499 /* AuthState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28BEA2C2EBFB86254DA89338 /* AuthState.swift */; };
+		A1F0075700000000000005B2 /* SpacechatWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F0075700000000000005A1 /* SpacechatWords.swift */; };
+		A1F0075700000000000006B2 /* SpacechatAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F0075700000000000006A1 /* SpacechatAuth.swift */; };
+		A1F0075700000000000007B2 /* SpacechatPhraseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F0075700000000000007A1 /* SpacechatPhraseView.swift */; };
 		A1F0075700000000000004B2 /* DotEffectsLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F0075700000000000004A1 /* DotEffectsLayer.swift */; };
 		A1F0075700000000000003C3 /* Vortex in Frameworks */ = {isa = PBXBuildFile; productRef = A1F0075700000000000003B2 /* Vortex */; };
 		A1F0075700000000000001B2 /* CustomDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F0075700000000000001A1 /* CustomDot.swift */; };
@@ -50,6 +53,9 @@
 		25F557CF4498101945E155DF /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		2745730785AA222B795AFC7E /* ambient.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = ambient.wav; sourceTree = "<group>"; };
 		28BEA2C2EBFB86254DA89338 /* AuthState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthState.swift; sourceTree = "<group>"; };
+		A1F0075700000000000005A1 /* SpacechatWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacechatWords.swift; sourceTree = "<group>"; };
+		A1F0075700000000000006A1 /* SpacechatAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacechatAuth.swift; sourceTree = "<group>"; };
+		A1F0075700000000000007A1 /* SpacechatPhraseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacechatPhraseView.swift; sourceTree = "<group>"; };
 		A1F0075700000000000004A1 /* DotEffectsLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DotEffectsLayer.swift; sourceTree = "<group>"; };
 		A1F0075700000000000001A1 /* CustomDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomDot.swift; sourceTree = "<group>"; };
 		A1F0075700000000000002A1 /* DotStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DotStudioView.swift; sourceTree = "<group>"; };
@@ -96,6 +102,8 @@
 		18423E2369CF3B98C609CF46 /* Auth */ = {
 			isa = PBXGroup;
 			children = (
+				A1F0075700000000000006A1 /* SpacechatAuth.swift */,
+				A1F0075700000000000005A1 /* SpacechatWords.swift */,
 				28BEA2C2EBFB86254DA89338 /* AuthState.swift */,
 			);
 			path = Auth;
@@ -140,6 +148,7 @@
 		540C8DEAE31951E7F8D2436B /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				A1F0075700000000000007A1 /* SpacechatPhraseView.swift */,
 				A1F0075700000000000004A1 /* DotEffectsLayer.swift */,
 				A1F0075700000000000002A1 /* DotStudioView.swift */,
 				C97377EAD946448AF3BB20F7 /* CollectionView.swift */,
@@ -320,6 +329,9 @@
 				10223755B3BB371A60C29E0E /* AIApp.swift in Sources */,
 				FF3E8DE83D7E148694E36D30 /* AudioManager.swift in Sources */,
 				D384B32AC1D483C111E31499 /* AuthState.swift in Sources */,
+				A1F0075700000000000005B2 /* SpacechatWords.swift in Sources */,
+				A1F0075700000000000006B2 /* SpacechatAuth.swift in Sources */,
+				A1F0075700000000000007B2 /* SpacechatPhraseView.swift in Sources */,
 				A1F0075700000000000004B2 /* DotEffectsLayer.swift in Sources */,
 				A1F0075700000000000001B2 /* CustomDot.swift in Sources */,
 				A1F0075700000000000002B2 /* DotStudioView.swift in Sources */,

@@ -27,13 +27,51 @@ final class AuthState: ObservableObject {
     /// nothing at all.
     @Published var errorMessage: String?
 
-    /// Whether the current session is a guest rather than a real Apple
-    /// account — used to offer "Sign in with Apple" again later.
+    /// Whether the current session is a guest rather than a real account —
+    /// used to gate purchases and to offer signing in again later.
     var isGuest: Bool { defaults.string(forKey: userIDKey) == guestUserID }
+
+    /// Set when the player signed in with a Spacechat recovery phrase rather
+    /// than with Apple. The Spacechat session token itself lives in the
+    /// Keychain (see `SpacechatAuth`), never here.
+    @Published var spacechatUsername: String?
+
+    private let spacechatUsernameKey = "ai_spacechat_username"
 
     init() {
         isSignedIn = defaults.string(forKey: userIDKey) != nil
         displayName = defaults.string(forKey: nameKey)
+        spacechatUsername = defaults.string(forKey: spacechatUsernameKey)
+    }
+
+    /// Signs in against Spacechat with a recovery phrase — the same endpoint,
+    /// body and phrase rules the Spacechat app itself uses, so an account is
+    /// shared between the two.
+    ///
+    /// The server creates the account when it doesn't recognize the phrase,
+    /// which is what makes "create a new phrase" work without a separate
+    /// sign-up call.
+    @discardableResult
+    func signInWithSpacechat(phrase: String) async -> Bool {
+        do {
+            let account = try await SpacechatAuth.login(phrase: phrase)
+            SpacechatAuth.storePhrase(phrase)
+            SpacechatAuth.storeSession(account.session)
+            defaults.set(account.id, forKey: userIDKey)
+            defaults.set(account.username, forKey: spacechatUsernameKey)
+            if !account.displayName.isEmpty {
+                defaults.set(account.displayName, forKey: nameKey)
+                displayName = account.displayName
+            }
+            spacechatUsername = account.username
+            errorMessage = nil
+            isSignedIn = true
+            return true
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription
+                ?? "Login failed. Check your recovery phrase."
+            return false
+        }
     }
 
     func completeSignIn(userID: String, fullName: PersonNameComponents?) {
@@ -87,15 +125,25 @@ final class AuthState: ObservableObject {
     func signOut() {
         defaults.removeObject(forKey: userIDKey)
         defaults.removeObject(forKey: nameKey)
+        defaults.removeObject(forKey: spacechatUsernameKey)
+        // The phrase is the account: leaving it in the Keychain after a sign
+        // out would let the next person on this device walk straight back in.
+        SpacechatAuth.clearStoredCredentials()
         isSignedIn = false
         displayName = nil
+        spacechatUsername = nil
     }
 
     /// Re-checks Apple's own record of the credential in case the player
     /// revoked "AI"'s access from their Apple ID settings since we last saw
     /// them. Cheap to call once at launch; silently no-ops if never signed in.
     func refreshCredentialState() {
-        guard let userID = defaults.string(forKey: userIDKey), userID != guestUserID else { return }
+        // Only meaningful for an Apple session: a Spacechat id is not an
+        // Apple user identifier, and asking Apple about one returns
+        // .notFound, which would sign the player straight back out.
+        guard spacechatUsername == nil,
+              let userID = defaults.string(forKey: userIDKey),
+              userID != guestUserID else { return }
         ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { [weak self] state, _ in
             guard state != .authorized else { return }
             Task { @MainActor in

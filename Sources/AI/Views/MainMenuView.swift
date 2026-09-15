@@ -1186,6 +1186,7 @@ private struct DailyRewardSheet: View {
 private struct SignInRequiredSheet: View {
     @ObservedObject var authState: AuthState
     @Environment(\.dismiss) private var dismiss
+    @State private var showPhraseSheet = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -1218,6 +1219,12 @@ private struct SignInRequiredSheet: View {
             .clipShape(Capsule())
             .padding(.top, 4)
 
+            Button { showPhraseSheet = true } label: {
+                Text("Use a Spacechat phrase instead")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.black.opacity(0.6))
+            }
+
             if let message = authState.errorMessage {
                 Text(message)
                     .font(.system(size: 12))
@@ -1233,7 +1240,10 @@ private struct SignInRequiredSheet: View {
 
             Spacer(minLength: 0)
         }
-        .presentationDetents([.fraction(0.55)])
+        .presentationDetents([.fraction(0.62)])
+        .sheet(isPresented: $showPhraseSheet) {
+            SpacechatPhraseView(authState: authState) { dismiss() }
+        }
     }
 }
 
