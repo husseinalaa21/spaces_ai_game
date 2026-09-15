@@ -1,17 +1,15 @@
 import SwiftUI
+import AuthenticationServices
 
 /// Shown after the splash screen when there's no signed-in player yet (§76).
 /// A small row of dots up top for continuity with the app's own logo/splash,
-/// and a single white button front and center — nothing else competing for
-/// attention.
+/// then the real Sign in with Apple button — and, below it, a guest path.
 ///
-/// NOTE: this currently shows a plain "Continue" button instead of the real
-/// Sign in with Apple button, so the game can be tested end to end without
-/// a paid Apple Developer account / Sign in with Apple capability set up
-/// yet. `AuthState.completeTestSignIn()` is a local-only placeholder for
-/// `AuthState.completeSignIn(userID:fullName:)` — swap the button's action
-/// back to the real Apple flow (see git history / AI.entitlements, which is
-/// already wired up and ready) once that's set up.
+/// The guest path is not optional politeness: App Review Guideline 5.1.1(v)
+/// forbids requiring an account for an app whose core features don't need
+/// one. Progress saves locally either way, so signing in only adds a display
+/// name today. When a backend exists, that's when the pitch for signing in
+/// becomes real, and the copy here should change with it — not before.
 struct SignInView: View {
     @ObservedObject var authState: AuthState
     let onSignedIn: () -> Void
@@ -29,7 +27,7 @@ struct SignInView: View {
                 Spacer()
             }
 
-            VStack(spacing: 16) {
+            VStack(spacing: 14) {
                 Text("Spaces")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(.black)
@@ -37,22 +35,41 @@ struct SignInView: View {
                     .minimumScaleFactor(0.7)
                     .padding(.horizontal, 24)
 
-                Text("Sign in to save your progress\nacross devices.")
+                Text("Sign in to keep your name on your dot,\nor jump straight in.")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Button(action: continueTapped) {
-                    Text("Continue")
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
-                        .foregroundColor(.black)
-                        .frame(width: 260, height: 50)
+                SignInWithAppleButton(.signIn) { request in
+                    // Only the name is requested. Asking for the email would
+                    // hand back a private-relay address there's currently no
+                    // backend to send anything to.
+                    request.requestedScopes = [.fullName]
+                } onCompletion: { result in
+                    if authState.handleAppleSignIn(result) {
+                        onSignedIn()
+                    }
                 }
-                .background(Color.white)
+                .signInWithAppleButtonStyle(.black)
+                .frame(width: 260, height: 50)
                 .clipShape(Capsule())
-                .overlay(Capsule().stroke(Color.black.opacity(0.15), lineWidth: 1))
                 .padding(.top, 12)
+
+                Button(action: continueAsGuest) {
+                    Text("Continue without an account")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundColor(.black.opacity(0.55))
+                        .frame(width: 260, height: 40)
+                }
+
+                if let message = authState.errorMessage {
+                    Text(message)
+                        .font(.system(size: 12))
+                        .foregroundColor(.red.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
             }
         }
     }
@@ -67,8 +84,8 @@ struct SignInView: View {
         }
     }
 
-    private func continueTapped() {
-        authState.completeTestSignIn()
+    private func continueAsGuest() {
+        authState.continueAsGuest()
         onSignedIn()
     }
 }
