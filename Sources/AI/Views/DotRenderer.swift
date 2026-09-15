@@ -121,19 +121,21 @@ enum DotRenderer {
         let styledColor = visual.mixAmount > 0 ? baseColor.mix(with: effectiveAccent, amount: visual.mixAmount) : baseColor
         let styleShine = visual.shine
 
-        // A two-layer ambient bloom bleeding out into the space around the
-        // dot instead of one flat blurred circle — a big, very soft outer
-        // glow for atmosphere plus a tighter, brighter inner glow right at
-        // the edge for a proper "light source" falloff — brighter for
-        // shinier/premium styles and right after eating (§ user feedback:
-        // "make the light effect much better and more professional").
-        // Drawn in plain world space (glows are round either way, no need
-        // for the body's own rotation) before anything else so it sits
-        // fully behind the dot rather than washing out its edges.
-        do {
+        // A bloom behind the dot, but ONLY while it is actually eating
+        // (§ new — "the dots has a background behind them something like
+        // shadows, it's so annoying").
+        //
+        // This used to burn at a constant floor plus a shine bonus, so every
+        // dot sat on a permanent tinted halo. Against the light menu that
+        // reads as a smudge or a drop shadow, which is exactly what it looked
+        // like. Scaling it purely by `pulse` means it is completely absent at
+        // rest — the menu preview, every picker swatch, an idle dot in the
+        // universe — and only blooms on the bite, where it is feedback rather
+        // than decoration.
+        if pulse > 0.01 {
             let outerRadius = radius * (1.9 + 0.45 * pulse + 0.6 * styleShine)
             var outerGlow = context
-            outerGlow.opacity = 0.10 + 0.09 * styleShine + 0.12 * pulse
+            outerGlow.opacity = 0.22 * pulse
             outerGlow.addFilter(.blur(radius: radius * 0.85))
             outerGlow.fill(
                 Path(ellipseIn: CGRect(x: center.x - outerRadius, y: center.y - outerRadius,
@@ -143,7 +145,7 @@ enum DotRenderer {
 
             let innerRadius = radius * (1.25 + 0.2 * pulse + 0.3 * styleShine)
             var innerGlow = context
-            innerGlow.opacity = 0.16 + 0.16 * styleShine + 0.2 * pulse
+            innerGlow.opacity = 0.34 * pulse
             innerGlow.addFilter(.blur(radius: radius * 0.32))
             innerGlow.fill(
                 Path(ellipseIn: CGRect(x: center.x - innerRadius, y: center.y - innerRadius,
