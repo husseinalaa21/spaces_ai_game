@@ -128,5 +128,10 @@ struct RootView: View {
         }
         .preferredColorScheme(.light)
         .statusBar(hidden: true)
+        // Lets the pages run edge to edge: the status bar is already hidden,
+        // and this dims the home indicator so the bottom of a page isn't
+        // permanently underlined by it.
+        .persistentSystemOverlays(.hidden)
+        .ignoresSafeArea()
     }
 }

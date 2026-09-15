@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The shell that holds the game's three pages behind a single top banner:
 /// Home, Spacechat AI (centre), and Messages.
@@ -20,6 +21,27 @@ struct GameHubView: View {
         case spacechatAI = 1
         case messages = 2
         var id: Int { rawValue }
+    }
+
+    /// Height of the top inset the banner has to sit below, read from the
+    /// active window once rather than guessed at a fixed number — it differs
+    /// between a Dynamic Island, a notch, and an older flat top.
+    @MainActor static let bannerTopInset: CGFloat = {
+        max(GameHubView.keyWindowInsets?.top ?? 0, 20) + 6
+    }()
+
+    /// Height of the home indicator strip at the bottom, for the same
+    /// reason: the pages run under it, so anything tappable needs clearance.
+    @MainActor static let homeIndicatorInset: CGFloat = {
+        GameHubView.keyWindowInsets?.bottom ?? 0
+    }()
+
+    @MainActor private static var keyWindowInsets: UIEdgeInsets? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?
+            .safeAreaInsets
     }
 
     @State private var tab: Tab = .home
@@ -46,13 +68,22 @@ struct GameHubView: View {
                 removal: .move(edge: movingForward ? .leading : .trailing)
             ))
 
+            // The container ignores the safe area, so the banner has to
+            // clear the status bar / Dynamic Island itself rather than
+            // relying on an inset that is no longer applied.
             banner
-                .padding(.top, 8)
+                .padding(.top, GameHubView.bannerTopInset)
         }
-        .background(Color.white.ignoresSafeArea())
-        // Clipped so a page sliding in from off-screen never paints outside
-        // the shell while it travels.
-        .clipped()
+        // The page fills the whole display — under the notch/Dynamic Island
+        // at the top and under the home indicator at the bottom — instead of
+        // stopping at the safe area and leaving bands at either end.
+        //
+        // `.clipped()` used to be here to contain a sliding page, but it
+        // clips to the SAFE-AREA frame, which is exactly what cropped the
+        // page back off those edges. The window clips the slide anyway.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.white)
+        .ignoresSafeArea()
     }
 
     // MARK: - Banner

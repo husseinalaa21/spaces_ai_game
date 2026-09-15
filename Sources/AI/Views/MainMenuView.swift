@@ -185,8 +185,11 @@ struct MainMenuView: View {
                     pointsBadge
                 }
                 .padding(.horizontal, 16)
-                // Clears the hub banner floating above all three pages.
-                .padding(.top, 66)
+                // Clears the hub banner, which now sits below the device's
+                // own top inset rather than at a fixed 8pt — a fixed number
+                // here would tuck the Store button under the banner on a
+                // Dynamic Island phone.
+                .padding(.top, GameHubView.bannerTopInset + 54)
                 Spacer()
             }
             .opacity(hasAppeared ? 1 : 0)

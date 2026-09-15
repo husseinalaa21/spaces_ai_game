@@ -24,8 +24,9 @@ struct SpacechatAIView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Clears the banner floating above.
-            Color.clear.frame(height: 56)
+            // Clears the banner floating above, which now sits below the
+            // device's own top inset.
+            Color.clear.frame(height: GameHubView.bannerTopInset + 46)
 
             if authState.spacechatUsername == nil {
                 signedOutNotice
@@ -34,7 +35,10 @@ struct SpacechatAIView: View {
                 composer
             }
         }
-        .background(Color.white.ignoresSafeArea())
+        // Fills the display end to end; the composer below keeps its own
+        // clearance from the home indicator.
+        .background(Color.white)
+        .ignoresSafeArea()
     }
 
     private var signedOutNotice: some View {
@@ -149,7 +153,10 @@ struct SpacechatAIView: View {
             .disabled(!canSend)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.top, 10)
+        // Keeps the send button clear of the home indicator now that the
+        // page itself runs under it.
+        .padding(.bottom, GameHubView.homeIndicatorInset + 10)
         .background(Color.white)
     }
 
