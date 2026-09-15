@@ -11,9 +11,9 @@ import StoreKit
 /// ourselves — so a lapsed, refunded or family-shared subscription is
 /// always reflected correctly, including changes made on another device.
 ///
-/// Points-redeemed Premium is deliberately NOT modelled here; that's a
-/// local grant tracked by `PlayerProfile.premiumFromPoints` and merged with
-/// this class's `isSubscribed` in `PlayerState.refreshPremium(subscribed:)`.
+/// Premium is the subscription and nothing else — there is no Points
+/// redemption path — so `isSubscribed` here is the single source of truth,
+/// mirrored onto the profile by `PlayerState.refreshPremium(subscribed:)`.
 @MainActor
 final class StoreManager: ObservableObject {
 

@@ -411,7 +411,25 @@ enum DotStyle: String, Codable, CaseIterable, Identifiable, CosmeticOption {
     /// than just another badge floating on its head. `DotRenderer` owns the
     /// actual drawing per case; this only names which one.
     enum Accessory: Equatable {
-        case none, bowtie, scarf, collar, cape, medal
+        case none, bowtie, scarf, collar, cape, medal, tie, chain
+    }
+
+    /// Worn over the eyes (§ new — "replace their eyes with glasses or
+    /// something for some of them"). Drawn by `DotRenderer` on top of the
+    /// eyes in the same local frame, so it blinks, squashes and turns with
+    /// the body. `.none` leaves the plain eyes alone.
+    enum EyeWear: Equatable {
+        case none
+        /// Thin round wire frames over both eyes.
+        case glasses
+        /// Filled dark lenses joined by a bridge.
+        case sunglasses
+        /// A single wraparound band across both eyes.
+        case visor
+        /// One round lens with a chain, over the right eye only.
+        case monocle
+        /// An angled patch over the left eye, with a strap.
+        case eyePatch
     }
 
     /// Everything `DotRenderer` needs to actually paint this style, kept as
@@ -436,6 +454,8 @@ enum DotStyle: String, Codable, CaseIterable, Identifiable, CosmeticOption {
         /// A second, lower worn item (§ new — "more cloths") — `.none` wears
         /// nothing extra beyond the hat.
         var accessory: Accessory = .none
+        /// Eyewear drawn over the eyes — `.none` leaves them bare.
+        var eyeWear: EyeWear = .none
     }
 
     var visual: Visual {
@@ -443,9 +463,9 @@ enum DotStyle: String, Codable, CaseIterable, Identifiable, CosmeticOption {
         case .classic:
             return Visual(accentColor: swatchColor, mixAmount: 0, shine: 0, hasStars: false, hasRainbow: false, hatSymbol: nil, accessory: .none)
         case .gold:
-            return Visual(accentColor: Color(red: 1.0, green: 0.82, blue: 0.35), mixAmount: 0.55, shine: 0.15, hasStars: false, hasRainbow: false, hatSymbol: "crown.fill", accessory: .medal)
+            return Visual(accentColor: Color(red: 1.0, green: 0.82, blue: 0.35), mixAmount: 0.55, shine: 0.15, hasStars: false, hasRainbow: false, hatSymbol: "crown.fill", accessory: .medal, eyeWear: .monocle)
         case .diamond:
-            return Visual(accentColor: Color(red: 0.75, green: 0.95, blue: 1.0), mixAmount: 0.5, shine: 0.25, hasStars: false, hasRainbow: false, hatSymbol: "diamond.fill", accessory: .collar)
+            return Visual(accentColor: Color(red: 0.75, green: 0.95, blue: 1.0), mixAmount: 0.5, shine: 0.25, hasStars: false, hasRainbow: false, hatSymbol: "diamond.fill", accessory: .chain, eyeWear: .glasses)
         case .galaxy:
             return Visual(accentColor: Color(red: 0.22, green: 0.12, blue: 0.45), mixAmount: 0.6, shine: 0.05, hasStars: true, hasRainbow: false, hatSymbol: "moon.stars.fill", accessory: .cape)
         case .silver:
@@ -457,11 +477,11 @@ enum DotStyle: String, Codable, CaseIterable, Identifiable, CosmeticOption {
         case .sapphire:
             return Visual(accentColor: swatchColor, mixAmount: 0.55, shine: 0.25, hasStars: false, hasRainbow: false, hatSymbol: "drop.fill", accessory: .bowtie)
         case .obsidian:
-            return Visual(accentColor: swatchColor, mixAmount: 0.65, shine: 0.08, hasStars: false, hasRainbow: false, hatSymbol: "shield.fill", accessory: .cape)
+            return Visual(accentColor: swatchColor, mixAmount: 0.65, shine: 0.08, hasStars: false, hasRainbow: false, hatSymbol: "shield.fill", accessory: .cape, eyeWear: .sunglasses)
         case .roseGold:
             return Visual(accentColor: swatchColor, mixAmount: 0.5, shine: 0.25, hasStars: false, hasRainbow: false, hatSymbol: "gift.fill", accessory: .bowtie)
         case .neon:
-            return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.35, hasStars: false, hasRainbow: false, hatSymbol: "bolt.fill", accessory: .collar)
+            return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.35, hasStars: false, hasRainbow: false, hatSymbol: "bolt.fill", accessory: .collar, eyeWear: .visor)
         case .rainbow:
             return Visual(accentColor: swatchColor, mixAmount: 0.5, shine: 0.3, hasStars: false, hasRainbow: true, hatSymbol: "sparkles", accessory: .bowtie)
         case .fire:
@@ -469,25 +489,25 @@ enum DotStyle: String, Codable, CaseIterable, Identifiable, CosmeticOption {
         case .ice:
             return Visual(accentColor: swatchColor, mixAmount: 0.55, shine: 0.3, hasStars: false, hasRainbow: false, hatSymbol: "snowflake", accessory: .scarf)
         case .electric:
-            return Visual(accentColor: swatchColor, mixAmount: 0.5, shine: 0.35, hasStars: false, hasRainbow: false, hatSymbol: "bolt.fill", accessory: .collar)
+            return Visual(accentColor: swatchColor, mixAmount: 0.5, shine: 0.35, hasStars: false, hasRainbow: false, hatSymbol: "bolt.fill", accessory: .chain, eyeWear: .visor)
         case .toxic:
-            return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.2, hasStars: false, hasRainbow: false, hatSymbol: "leaf.fill", accessory: .collar)
+            return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.2, hasStars: false, hasRainbow: false, hatSymbol: "leaf.fill", accessory: .chain)
         case .mint:
             return Visual(accentColor: swatchColor, mixAmount: 0.5, shine: 0.2, hasStars: false, hasRainbow: false, hatSymbol: "leaf.fill", accessory: .none)
         case .lava:
             return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.15, hasStars: false, hasRainbow: false, hatSymbol: "flame.fill", accessory: .scarf)
         case .crystal:
-            return Visual(accentColor: swatchColor, mixAmount: 0.45, shine: 0.4, hasStars: false, hasRainbow: false, hatSymbol: "diamond.fill", accessory: .medal)
+            return Visual(accentColor: swatchColor, mixAmount: 0.45, shine: 0.4, hasStars: false, hasRainbow: false, hatSymbol: "diamond.fill", accessory: .medal, eyeWear: .glasses)
         case .shadow:
-            return Visual(accentColor: swatchColor, mixAmount: 0.7, shine: 0.05, hasStars: false, hasRainbow: false, hatSymbol: "moon.fill", accessory: .cape)
+            return Visual(accentColor: swatchColor, mixAmount: 0.7, shine: 0.05, hasStars: false, hasRainbow: false, hatSymbol: "moon.fill", accessory: .cape, eyeWear: .sunglasses)
         case .chrome:
-            return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.5, hasStars: false, hasRainbow: false, hatSymbol: "shield.fill", accessory: .collar)
+            return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.5, hasStars: false, hasRainbow: false, hatSymbol: "shield.fill", accessory: .chain, eyeWear: .visor)
         case .nebula:
-            return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.1, hasStars: true, hasRainbow: false, hatSymbol: "sparkles", accessory: .cape)
+            return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.1, hasStars: true, hasRainbow: false, hatSymbol: "sparkles", accessory: .cape, eyeWear: .eyePatch)
         case .candy:
             return Visual(accentColor: swatchColor, mixAmount: 0.5, shine: 0.25, hasStars: false, hasRainbow: false, hatSymbol: "gift.fill", accessory: .bowtie)
         case .royal:
-            return Visual(accentColor: swatchColor, mixAmount: 0.55, shine: 0.2, hasStars: false, hasRainbow: false, hatSymbol: "crown.fill", accessory: .cape)
+            return Visual(accentColor: swatchColor, mixAmount: 0.55, shine: 0.2, hasStars: false, hasRainbow: false, hatSymbol: "crown.fill", accessory: .cape, eyeWear: .monocle)
         case .frost:
             return Visual(accentColor: swatchColor, mixAmount: 0.5, shine: 0.3, hasStars: false, hasRainbow: false, hatSymbol: "snowflake", accessory: .scarf)
         case .sunburst:
@@ -495,13 +515,13 @@ enum DotStyle: String, Codable, CaseIterable, Identifiable, CosmeticOption {
         case .amethyst:
             return Visual(accentColor: swatchColor, mixAmount: 0.55, shine: 0.3, hasStars: false, hasRainbow: false, hatSymbol: "diamond.fill", accessory: .medal)
         case .jade:
-            return Visual(accentColor: swatchColor, mixAmount: 0.55, shine: 0.2, hasStars: false, hasRainbow: false, hatSymbol: "leaf.fill", accessory: .collar)
+            return Visual(accentColor: swatchColor, mixAmount: 0.55, shine: 0.2, hasStars: false, hasRainbow: false, hatSymbol: "leaf.fill", accessory: .chain)
         case .platinum:
-            return Visual(accentColor: swatchColor, mixAmount: 0.45, shine: 0.45, hasStars: false, hasRainbow: false, hatSymbol: "medal.fill", accessory: .bowtie)
+            return Visual(accentColor: swatchColor, mixAmount: 0.45, shine: 0.45, hasStars: false, hasRainbow: false, hatSymbol: "medal.fill", accessory: .bowtie, eyeWear: .visor)
         case .coral:
             return Visual(accentColor: swatchColor, mixAmount: 0.5, shine: 0.2, hasStars: false, hasRainbow: false, hatSymbol: "gift.fill", accessory: .bowtie)
         case .storm:
-            return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.2, hasStars: false, hasRainbow: false, hatSymbol: "bolt.fill", accessory: .cape)
+            return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.2, hasStars: false, hasRainbow: false, hatSymbol: "bolt.fill", accessory: .cape, eyeWear: .sunglasses)
         case .blossom:
             return Visual(accentColor: swatchColor, mixAmount: 0.5, shine: 0.2, hasStars: false, hasRainbow: false, hatSymbol: "leaf.fill", accessory: .none)
         case .ember:
@@ -509,13 +529,13 @@ enum DotStyle: String, Codable, CaseIterable, Identifiable, CosmeticOption {
         case .glacier:
             return Visual(accentColor: swatchColor, mixAmount: 0.45, shine: 0.35, hasStars: false, hasRainbow: false, hatSymbol: "snowflake", accessory: .scarf)
         case .phantom:
-            return Visual(accentColor: swatchColor, mixAmount: 0.65, shine: 0.15, hasStars: false, hasRainbow: false, hatSymbol: "moon.fill", accessory: .cape)
+            return Visual(accentColor: swatchColor, mixAmount: 0.65, shine: 0.15, hasStars: false, hasRainbow: false, hatSymbol: "moon.fill", accessory: .cape, eyeWear: .eyePatch)
         case .starlight:
-            return Visual(accentColor: swatchColor, mixAmount: 0.4, shine: 0.4, hasStars: true, hasRainbow: false, hatSymbol: "sparkles", accessory: .medal)
+            return Visual(accentColor: swatchColor, mixAmount: 0.4, shine: 0.4, hasStars: true, hasRainbow: false, hatSymbol: "sparkles", accessory: .medal, eyeWear: .glasses)
         case .wildfire:
             return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.3, hasStars: false, hasRainbow: false, hatSymbol: "flame.fill", accessory: .scarf)
         case .velvet:
-            return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.25, hasStars: false, hasRainbow: false, hatSymbol: "crown.fill", accessory: .cape)
+            return Visual(accentColor: swatchColor, mixAmount: 0.6, shine: 0.25, hasStars: false, hasRainbow: false, hatSymbol: "crown.fill", accessory: .cape, eyeWear: .monocle)
         }
     }
 }

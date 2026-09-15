@@ -1050,7 +1050,6 @@ private struct StoreView: View {
     var save: () -> Void
     @Environment(\.dismiss) private var dismiss
 
-    static let membershipPointsCost = 2000
     private let gold = DotStyle.gold.swatchColor
 
     private let pointPacks: [(name: String, points: Int, price: String, icon: String, color: Color, highlight: Bool)] = [
@@ -1163,24 +1162,6 @@ private struct StoreView: View {
                         .font(.system(size: 11))
                         .foregroundColor(.black.opacity(0.45))
 
-                    let canRedeem = player.profile.points >= Self.membershipPointsCost
-                    Button(action: redeemPremiumWithPoints) {
-                        HStack {
-                            Image("Sparkle").renderingMode(.template).resizable()
-                                .frame(width: 14, height: 14)
-                            Text("Redeem \(Self.membershipPointsCost) Points")
-                            Spacer()
-                            if !canRedeem {
-                                Text("Not enough").font(.system(size: 12)).foregroundColor(.black.opacity(0.4))
-                            }
-                        }
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundColor(canRedeem ? .black : .black.opacity(0.35))
-                        .padding(.horizontal, 16).padding(.vertical, 12)
-                        .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(PressableButtonStyle())
-                    .disabled(!canRedeem)
                 }
 
                 if let message = store.errorMessage {
@@ -1414,17 +1395,6 @@ private struct StoreView: View {
             save()
             if store.isSubscribed { HapticsManager.shared.success() }
         }
-    }
-
-    /// Premium bought with earned Points rather than money. Recorded on its
-    /// own flag so a later subscription lapse can't revoke it.
-    private func redeemPremiumWithPoints() {
-        guard player.profile.points >= Self.membershipPointsCost else { return }
-        player.profile.points -= Self.membershipPointsCost
-        player.profile.premiumFromPoints = true
-        player.refreshPremium(subscribed: store.isSubscribed)
-        save()
-        HapticsManager.shared.success()
     }
 
     private func buyPointPack(_ pack: (name: String, points: Int, price: String, icon: String, color: Color, highlight: Bool)) {

@@ -24,11 +24,6 @@ struct PlayerProfile: Codable {
     /// wins once that query returns.
     var isPremium: Bool = false
 
-    /// Premium bought with in-game Points rather than money (`StoreView`'s
-    /// "Redeem N Points"). Kept separate from the real subscription so that
-    /// a lapsed or refunded App Store subscription doesn't take away
-    /// something the player paid for with Points they earned.
-    var premiumFromPoints: Bool = false
     var selectedUniverse: UniverseTheme = .white
     var selectedDotStyle: DotStyle = .classic
 
@@ -95,7 +90,6 @@ struct PlayerProfile: Codable {
         hapticsEnabled = try c.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
         reduceMotion = try c.decodeIfPresent(Bool.self, forKey: .reduceMotion) ?? false
         isPremium = try c.decodeIfPresent(Bool.self, forKey: .isPremium) ?? false
-        premiumFromPoints = try c.decodeIfPresent(Bool.self, forKey: .premiumFromPoints) ?? false
         selectedUniverse = try c.decodeIfPresent(UniverseTheme.self, forKey: .selectedUniverse) ?? .white
         selectedDotStyle = try c.decodeIfPresent(DotStyle.self, forKey: .selectedDotStyle) ?? .classic
         unlockedUniverses = try c.decodeIfPresent(Set<String>.self, forKey: .unlockedUniverses) ?? []
@@ -222,15 +216,14 @@ final class PlayerState: ObservableObject {
     // Dot Style with Points, alongside the existing "unlock everything" AI+
     // subscription rather than instead of it).
 
-    /// Folds Apple's live subscription state together with Points-redeemed
-    /// Premium. Called on launch, whenever `StoreManager.isSubscribed`
-    /// changes, and after a successful purchase or restore — so cancelling,
-    /// lapsing or refunding the subscription re-locks the premium cosmetics
-    /// unless they were redeemed with Points.
+    /// Mirrors Apple's live subscription state onto the saved profile.
+    /// Premium is the subscription and nothing else — there's no Points
+    /// redemption — so cancelling, lapsing or refunding re-locks the premium
+    /// cosmetics on the next refresh. Called on launch, whenever
+    /// `StoreManager.isSubscribed` changes, and after a purchase or restore.
     func refreshPremium(subscribed: Bool) {
-        let active = subscribed || profile.premiumFromPoints
-        guard profile.isPremium != active else { return }
-        profile.isPremium = active
+        guard profile.isPremium != subscribed else { return }
+        profile.isPremium = subscribed
     }
 
     /// Attempts to spend Points to unlock a single Universe. No-ops (and

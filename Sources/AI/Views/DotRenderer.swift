@@ -55,7 +55,7 @@ enum DotRenderer {
     static func drawPlayer(_ context: GraphicsContext, center: CGPoint, radius: CGFloat, color: Color,
                             stretch: CGFloat, angle: Angle, lookDirection: CGVector, time: Double,
                             eyeStyle: EyeStyle = .withPupil, reduceMotion: Bool = false, eatPulse: Double = 0,
-                            dotStyle: DotStyle = .classic, showGroundShadow: Bool = true) {
+                            dotStyle: DotStyle = .classic, showGroundShadow: Bool = false) {
         // `stretch` is driven by a slightly underdamped spring on the caller
         // side (see `WhiteSpaceView.updateStretch`), so it can overshoot a
         // touch past 1 for a bit of jelly pop — clamp the *shape* math to a
@@ -364,6 +364,11 @@ enum DotRenderer {
                                   dy: -lookDirection.dx * sinT + lookDirection.dy * cosT)
         drawEyes(bodyContext, anchor: eyeAnchor, scale: eyeScale, lookDirection: localLook, time: time, style: eyeStyle)
 
+        // Worn over the eyes, in the same local frame, so it squashes and
+        // turns with the body instead of floating on top of it.
+        drawEyeWear(bodyContext, anchor: eyeAnchor, scale: eyeScale,
+                    kind: visual.eyeWear, tint: styledColor.wornAccent(hueShift: 0.5))
+
         // A second worn item below the hat (§ new — "more cloths": a bowtie,
         // scarf, collar, cape, or medal per style — see `DotStyle.Accessory`)
         // — a simple drawn vector shape rather than another SF Symbol, so it
@@ -373,7 +378,8 @@ enum DotRenderer {
         // read as clothing, not as a shaded part of the dot), which also keeps
         // it distinct from the hat's own accent just below.
         drawAccessory(bodyContext, front: front, back: back, top: top, bottom: bottom,
-                      kind: visual.accessory, tint: styledColor.wornAccent(hueShift: 0.34))
+                      kind: visual.accessory, tint: styledColor.wornAccent(hueShift: 0.34),
+                      bodyPath: bodyPath)
 
         // A small worn accessory for premium Dot Styles (§ new — user asked
         // for something like "wearing a hat" so a premium pick reads at a
@@ -391,13 +397,113 @@ enum DotRenderer {
                 tint: styledColor.wornAccent(hueShift: 0.5))
     }
 
+    /// Eyewear worn over the eyes (§ new — "replace their eyes with glasses
+    /// or something for some of them"). Proportions mirror `drawEyes` so the
+    /// lenses land on the eyes at any body size.
+    private static func drawEyeWear(_ context: GraphicsContext, anchor: CGPoint, scale: CGFloat,
+                                     kind: DotStyle.EyeWear, tint: Color) {
+        guard kind != .none else { return }
+        let spacing = scale * 0.22
+        let lensR = scale * 0.19
+        let line = max(0.6, scale * 0.032)
+        let left = CGPoint(x: anchor.x - spacing, y: anchor.y)
+        let right = CGPoint(x: anchor.x + spacing, y: anchor.y)
+        let dark = Color.black.opacity(0.78)
+
+        func circle(_ c: CGPoint, _ r: CGFloat) -> Path {
+            Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+        }
+        /// A short white streak across a lens — the one cue that reads as
+        /// "glass" rather than a flat hole.
+        func glint(_ c: CGPoint, _ r: CGFloat) {
+            var g = Path()
+            g.move(to: CGPoint(x: c.x - r * 0.45, y: c.y + r * 0.2))
+            g.addLine(to: CGPoint(x: c.x + r * 0.1, y: c.y - r * 0.5))
+            context.stroke(g, with: .color(.white.opacity(0.55)),
+                           style: StrokeStyle(lineWidth: max(0.5, r * 0.22), lineCap: .round))
+        }
+
+        switch kind {
+        case .none:
+            break
+
+        case .glasses:
+            var frames = Path()
+            frames.addPath(circle(left, lensR))
+            frames.addPath(circle(right, lensR))
+            context.fill(frames, with: .color(.white.opacity(0.18)))
+            context.stroke(frames, with: .color(tint), lineWidth: line)
+            var bridge = Path()
+            bridge.move(to: CGPoint(x: left.x + lensR, y: anchor.y - lensR * 0.15))
+            bridge.addLine(to: CGPoint(x: right.x - lensR, y: anchor.y - lensR * 0.15))
+            context.stroke(bridge, with: .color(tint), lineWidth: line)
+            glint(left, lensR)
+
+        case .sunglasses:
+            let w = lensR * 2.1, h = lensR * 1.7
+            var lenses = Path()
+            lenses.addRoundedRect(in: CGRect(x: left.x - w / 2, y: anchor.y - h / 2, width: w, height: h),
+                                   cornerSize: CGSize(width: h * 0.42, height: h * 0.42))
+            lenses.addRoundedRect(in: CGRect(x: right.x - w / 2, y: anchor.y - h / 2, width: w, height: h),
+                                   cornerSize: CGSize(width: h * 0.42, height: h * 0.42))
+            context.fill(lenses, with: .color(dark))
+            var bridge = Path()
+            bridge.move(to: CGPoint(x: left.x + w / 2, y: anchor.y - h * 0.2))
+            bridge.addLine(to: CGPoint(x: right.x - w / 2, y: anchor.y - h * 0.2))
+            context.stroke(bridge, with: .color(tint), lineWidth: line * 1.6)
+            glint(left, lensR * 0.9)
+            glint(right, lensR * 0.9)
+
+        case .visor:
+            // One wraparound band across both eyes.
+            let w = (spacing * 2) + lensR * 2.4
+            let h = lensR * 1.6
+            let rect = CGRect(x: anchor.x - w / 2, y: anchor.y - h / 2, width: w, height: h)
+            var band = Path()
+            band.addRoundedRect(in: rect, cornerSize: CGSize(width: h * 0.5, height: h * 0.5))
+            context.fill(band, with: .color(dark))
+            context.stroke(band, with: .color(tint), lineWidth: line * 1.4)
+            var sheen = Path()
+            sheen.move(to: CGPoint(x: rect.minX + w * 0.12, y: rect.maxY - h * 0.22))
+            sheen.addLine(to: CGPoint(x: rect.minX + w * 0.42, y: rect.minY + h * 0.24))
+            context.stroke(sheen, with: .color(tint.opacity(0.75)),
+                           style: StrokeStyle(lineWidth: max(0.5, h * 0.16), lineCap: .round))
+
+        case .monocle:
+            let r = lensR * 1.15
+            let lens = circle(right, r)
+            context.fill(lens, with: .color(.white.opacity(0.2)))
+            context.stroke(lens, with: .color(tint), lineWidth: line * 1.5)
+            var chain = Path()
+            chain.move(to: CGPoint(x: right.x, y: right.y + r))
+            chain.addQuadCurve(to: CGPoint(x: right.x + r * 0.5, y: right.y + r * 2.4),
+                                control: CGPoint(x: right.x + r * 0.9, y: right.y + r * 1.5))
+            context.stroke(chain, with: .color(tint.opacity(0.85)),
+                           style: StrokeStyle(lineWidth: max(0.4, line * 0.8), lineCap: .round))
+            glint(right, r)
+
+        case .eyePatch:
+            let w = lensR * 2.0, h = lensR * 1.9
+            var patch = Path()
+            patch.addRoundedRect(in: CGRect(x: left.x - w / 2, y: anchor.y - h / 2, width: w, height: h),
+                                  cornerSize: CGSize(width: w * 0.38, height: h * 0.38))
+            context.fill(patch, with: .color(dark))
+            var strap = Path()
+            strap.move(to: CGPoint(x: left.x - w * 0.85, y: anchor.y - h * 0.62))
+            strap.addLine(to: CGPoint(x: right.x + w * 0.5, y: anchor.y - h * 0.18))
+            context.stroke(strap, with: .color(tint.opacity(0.9)),
+                           style: StrokeStyle(lineWidth: max(0.4, line * 0.9), lineCap: .round))
+        }
+    }
+
     /// Draws `DotStyle.Accessory` — a second worn item beyond the hat (§ new
     /// — "more cloths") — as a simple vector shape rather than an SF Symbol,
     /// anchored at roughly chest height in the body's own local frame so it
     /// moves and rotates with the dot exactly like the hat does. `.none`
     /// draws nothing.
     private static func drawAccessory(_ context: GraphicsContext, front: CGFloat, back: CGFloat,
-                                       top: CGFloat, bottom: CGFloat, kind: DotStyle.Accessory, tint: Color) {
+                                       top: CGFloat, bottom: CGFloat, kind: DotStyle.Accessory,
+                                       tint: Color, bodyPath: Path) {
         guard kind != .none else { return }
         let chest = CGPoint(x: front * 0.05, y: top * 0.48)
 
@@ -426,20 +532,63 @@ enum DotRenderer {
             )
 
         case .scarf:
-            // A thick, soft loop wrapping the lower-front of the body.
+            // A thick band across the lower body, clipped to the silhouette
+            // (§ new — "remove their hands"): this used to be a stroked arc
+            // with round caps, whose two ends poked out either side of the
+            // dot and read as little arms reaching out.
+            var scarfContext = context
+            scarfContext.clip(to: bodyPath)
             var path = Path()
             let r = top * 0.6
             path.addArc(center: CGPoint(x: 0, y: top * 0.1), radius: r,
-                        startAngle: .degrees(15), endAngle: .degrees(165), clockwise: false)
-            context.stroke(path, with: .color(tint), style: StrokeStyle(lineWidth: top * 0.22, lineCap: .round))
+                        startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+            scarfContext.stroke(path, with: .color(tint),
+                                style: StrokeStyle(lineWidth: top * 0.24, lineCap: .butt))
 
         case .collar:
-            // A thinner ring right at the neckline, just below the eyes.
+            // Same fix as `.scarf` — clipped, butt caps, no protruding ends.
+            var collarContext = context
+            collarContext.clip(to: bodyPath)
             var path = Path()
             let r = top * 0.48
             path.addArc(center: CGPoint(x: 0, y: -top * 0.02), radius: r,
-                        startAngle: .degrees(25), endAngle: .degrees(155), clockwise: false)
-            context.stroke(path, with: .color(tint), style: StrokeStyle(lineWidth: top * 0.1, lineCap: .round))
+                        startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+            collarContext.stroke(path, with: .color(tint),
+                                 style: StrokeStyle(lineWidth: top * 0.11, lineCap: .butt))
+
+        case .tie:
+            // A small knot with a tapered tie hanging below it, all well
+            // inside the silhouette.
+            let knotW = top * 0.16
+            let knotH = top * 0.13
+            var knot = Path()
+            knot.addRoundedRect(in: CGRect(x: chest.x - knotW / 2, y: chest.y - knotH,
+                                            width: knotW, height: knotH),
+                                 cornerSize: CGSize(width: knotW * 0.3, height: knotW * 0.3))
+            context.fill(knot, with: .color(tint.mix(with: .black, amount: 0.25)))
+            var blade = Path()
+            blade.move(to: CGPoint(x: chest.x - knotW * 0.42, y: chest.y))
+            blade.addLine(to: CGPoint(x: chest.x + knotW * 0.42, y: chest.y))
+            blade.addLine(to: CGPoint(x: chest.x + knotW * 0.30, y: chest.y + top * 0.38))
+            blade.addLine(to: CGPoint(x: chest.x, y: chest.y + top * 0.48))
+            blade.addLine(to: CGPoint(x: chest.x - knotW * 0.30, y: chest.y + top * 0.38))
+            blade.closeSubpath()
+            context.fill(blade, with: .color(tint))
+
+        case .chain:
+            // A row of small linked beads following the neckline curve.
+            let r = top * 0.42
+            let beadR = max(0.5, top * 0.055)
+            for i in 0...8 {
+                let t = Double(i) / 8.0
+                let angle = Double.pi * (0.12 + t * 0.76)
+                let x = CGFloat(cos(angle)) * r * -1
+                let y = CGFloat(sin(angle)) * r * 0.62 + top * 0.06
+                context.fill(
+                    Path(ellipseIn: CGRect(x: x - beadR, y: y - beadR, width: beadR * 2, height: beadR * 2)),
+                    with: .color(tint)
+                )
+            }
 
         case .cape:
             // A soft curved shape draped from the back, trailing behind the
@@ -478,8 +627,8 @@ enum DotRenderer {
     /// `hatSymbol` comes from `DotStyle.visual` — `nil` wears nothing.
     private static func drawHat(_ context: GraphicsContext, top: CGFloat, hatSymbol: String?, tint: Color) {
         guard let symbolName = hatSymbol else { return }
-        let size = top * 0.9
-        let anchor = CGPoint(x: 0, y: -top * 1.05)
+        let size = top * 0.95
+        let anchor = CGPoint(x: 0, y: -top * 1.12)
         // `Image` alone has no `.font`/`.foregroundColor` of its own (those
         // are plain `View` modifiers that would return `some View`, which
         // `GraphicsContext.draw` can't take) — wrapping it in `Text` first,
@@ -489,14 +638,9 @@ enum DotRenderer {
         let icon = Text(Image(systemName: symbolName))
             .font(.system(size: size, weight: .bold))
             .foregroundColor(tint)
-        // A soft dark shadow directly behind the glyph reads as depth/lift
-        // off the head — the same "grounding" role the body's own ground
-        // shadow plays, just scaled down for a small worn accessory.
-        var shadowContext = context
-        shadowContext.opacity = 0.22
-        shadowContext.addFilter(.blur(radius: size * 0.12))
-        shadowContext.draw(Text(Image(systemName: symbolName)).font(.system(size: size, weight: .bold)).foregroundColor(.black),
-                            at: CGPoint(x: anchor.x, y: anchor.y + size * 0.06))
+        // No drop shadow behind the glyph (§ new — "remove the shadow from
+        // the hats"): the hat is already a contrasting colour against the
+        // body, so the shadow only muddied it at small sizes.
         context.draw(icon, at: anchor)
     }
 
