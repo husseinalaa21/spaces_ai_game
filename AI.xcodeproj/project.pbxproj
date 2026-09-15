@@ -389,7 +389,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.spacechat.ai;
+				PRODUCT_BUNDLE_IDENTIFIER = com.husseinalaa.ai;
 				PRODUCT_NAME = "Spaces - Dots and AI";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -472,7 +472,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.spacechat.ai;
+				PRODUCT_BUNDLE_IDENTIFIER = com.husseinalaa.ai;
 				PRODUCT_NAME = "Spaces - Dots and AI";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;

@@ -37,7 +37,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.spacechat.ai
+        PRODUCT_BUNDLE_IDENTIFIER: com.husseinalaa.ai
         DEVELOPMENT_TEAM: SVDD93966K
         PRODUCT_NAME: "Spaces - Dots and AI"
         CODE_SIGN_STYLE: Automatic
