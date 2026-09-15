@@ -54,12 +54,27 @@ enum SpacechatAuth {
 
     // MARK: - Login
 
-    struct Account: Equatable {
+    struct Account {
         let id: String
         let session: String
         let username: String
         let displayName: String
         let isNewAccount: Bool
+        /// What the server says this account's storage mode is. Only
+        /// "prepaid" accepts writes to the user database — see
+        /// `handleUserDatabase` in the Spacechat server.
+        let databaseMode: String
+        /// The account's entire stored database, exactly as the server sent
+        /// it, or nil when the account has no active prepaid record.
+        ///
+        /// Kept as raw JSON rather than decoded into a model on purpose: a
+        /// write REPLACES the whole object server-side, so saving anything
+        /// requires merging into a faithful copy of everything already there.
+        /// Decoding to a typed model would quietly drop every key this app
+        /// doesn't know about — i.e. all of the player's Spacechat data.
+        let database: [String: Any]?
+
+        var supportsCloudSave: Bool { databaseMode == "prepaid" && database != nil }
     }
 
     enum AuthError: LocalizedError {
@@ -77,20 +92,6 @@ enum SpacechatAuth {
                 return "Couldn't reach Spacechat. Check your connection and try again."
             }
         }
-    }
-
-    /// Only the fields this game actually needs. The endpoint returns a much
-    /// larger object; every field here is optional except the ones Spacechat's
-    /// own client also treats as required, so a server-side addition can't
-    /// break decoding.
-    private struct LoginResponse: Decodable {
-        let connected: Bool
-        let id: String
-        let session: String
-        let username: String
-        let name: String?
-        let isNewAccount: Bool?
-        let message: String?
     }
 
     /// Signs in (or creates the account, if the phrase is new — the server
@@ -119,24 +120,31 @@ enum SpacechatAuth {
             throw AuthError.network
         }
 
+        // Parsed as raw JSON rather than through Codable so `prepaidDatabase`
+        // survives untouched — see the note on `Account.database`.
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        let message = json["message"] as? String ?? ""
+
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            let message = (try? JSONDecoder().decode(LoginResponse.self, from: data))?.message ?? ""
             throw AuthError.rejected(message)
         }
 
-        guard let decoded = try? JSONDecoder().decode(LoginResponse.self, from: data) else {
-            throw AuthError.rejected("")
-        }
-        guard decoded.connected, !decoded.session.isEmpty else {
-            throw AuthError.rejected(decoded.message ?? "")
+        let session = json["session"] as? String ?? ""
+        guard json["connected"] as? Bool == true, !session.isEmpty else {
+            throw AuthError.rejected(message)
         }
 
-        let display = (decoded.name?.isEmpty == false ? decoded.name! : decoded.username)
-        return Account(id: decoded.id,
-                       session: decoded.session,
-                       username: decoded.username,
-                       displayName: display,
-                       isNewAccount: decoded.isNewAccount ?? false)
+        let username = json["username"] as? String ?? ""
+        let name = json["name"] as? String ?? ""
+        return Account(
+            id: json["id"] as? String ?? "",
+            session: session,
+            username: username,
+            displayName: name.isEmpty ? username : name,
+            isNewAccount: json["isNewAccount"] as? Bool ?? false,
+            databaseMode: json["databaseMode"] as? String ?? "browser",
+            database: json["prepaidDatabase"] as? [String: Any]
+        )
     }
 
     // MARK: - Storage

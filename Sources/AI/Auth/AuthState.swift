@@ -38,6 +38,10 @@ final class AuthState: ObservableObject {
 
     private let spacechatUsernameKey = "ai_spacechat_username"
 
+    /// The most recent Spacechat account, handed to `SpacechatSync` so it
+    /// doesn't have to log in a second time right after signing in.
+    private(set) var lastAccount: SpacechatAuth.Account?
+
     init() {
         isSignedIn = defaults.string(forKey: userIDKey) != nil
         displayName = defaults.string(forKey: nameKey)
@@ -57,6 +61,7 @@ final class AuthState: ObservableObject {
             let account = try await SpacechatAuth.login(phrase: phrase)
             SpacechatAuth.storePhrase(phrase)
             SpacechatAuth.storeSession(account.session)
+            lastAccount = account
             defaults.set(account.id, forKey: userIDKey)
             defaults.set(account.username, forKey: spacechatUsernameKey)
             if !account.displayName.isEmpty {
@@ -132,6 +137,7 @@ final class AuthState: ObservableObject {
         isSignedIn = false
         displayName = nil
         spacechatUsername = nil
+        lastAccount = nil
     }
 
     /// Re-checks Apple's own record of the credential in case the player

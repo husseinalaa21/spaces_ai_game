@@ -42,6 +42,7 @@ enum IconPalette {
 struct MainMenuView: View {
     @ObservedObject var player: PlayerState
     @ObservedObject var authState: AuthState
+    @ObservedObject var sync: SpacechatSync
     var save: () -> Void = {}
     let onPlay: () -> Void
 

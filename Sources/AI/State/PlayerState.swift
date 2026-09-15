@@ -65,6 +65,21 @@ struct PlayerProfile: Codable {
     var pointsEarnedToday: Int = 0
     var pointsEarnedDate: Date? = nil
 
+    /// A profile nothing has happened to yet.
+    ///
+    /// Gates adopting a cloud save: pulling one over a profile that has real
+    /// progress would silently destroy it, so a cloud save is only ever taken
+    /// on a device that has nothing of its own.
+    var isUntouched: Bool {
+        intelligence == 0
+            && intelligenceLevel <= 1
+            && points == 0
+            && completedForms.isEmpty
+            && progress.isEmpty
+            && !hasCompletedOnboarding
+            && customDot.isBlank
+    }
+
     /// A "davi_32"-style handle shown under the player's own dot in the
     /// universe (§ new — matches the names shown under every rival dot) and
     /// editable from the main menu. Optional, and decoded as such, so a

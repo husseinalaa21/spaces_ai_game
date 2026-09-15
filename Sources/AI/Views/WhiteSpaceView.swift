@@ -58,6 +58,8 @@ private struct SparkleBurst: View {
 struct WhiteSpaceView: View {
     @ObservedObject var engine: GameEngine
     @ObservedObject var player: PlayerState
+    @ObservedObject var authState: AuthState
+    @ObservedObject var sync: SpacechatSync
     /// Returns to the main menu — the quit button, and automatically once
     /// the round timer runs out (in `.final` mode) or the player gets eaten.
     let onQuit: () -> Void
@@ -150,7 +152,7 @@ struct WhiteSpaceView: View {
             CollectionView(player: player)
         }
         .sheet(isPresented: $showingSettings) {
-            SettingsView(player: player)
+            SettingsView(player: player, authState: authState, sync: sync)
         }
         .onChange(of: engine.roundExpired) { expired in
             if expired && engine.roundMode == .practice { onRoundComplete() }

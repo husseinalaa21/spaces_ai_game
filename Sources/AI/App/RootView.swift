@@ -10,6 +10,7 @@ struct RootView: View {
     @StateObject private var player: PlayerState
     @StateObject private var engine: GameEngine
     @StateObject private var authState = AuthState()
+    @StateObject private var sync = SpacechatSync()
     private let saveManager: SaveManager
 
     // Play opens a 30-second food universe, then moves directly into combat.
@@ -32,6 +33,18 @@ struct RootView: View {
         saveManager = manager
     }
 
+    /// Hands a just-signed-in Spacechat account straight to the sync layer,
+    /// so signing in doesn't cost a second round trip.
+    private func adoptSpacechatAccountIfAny() {
+        guard let account = authState.lastAccount else { return }
+        sync.adopt(account)
+        if let cloud = sync.cloudProfile(), player.profile.isUntouched {
+            player.profile = cloud
+            player.ensureUsername()
+            saveManager.saveNow(player.profile)
+        }
+    }
+
     var body: some View {
         Group {
             switch phase {
@@ -43,11 +56,12 @@ struct RootView: View {
 
             case .signIn:
                 SignInView(authState: authState) {
+                    adoptSpacechatAccountIfAny()
                     withAnimation { phase = .home }
                 }
 
             case .home:
-                MainMenuView(player: player, authState: authState,
+                MainMenuView(player: player, authState: authState, sync: sync,
                              save: { saveManager.saveNow(player.profile) }) {
                     withAnimation { phase = .intro }
                 }
@@ -59,7 +73,7 @@ struct RootView: View {
                 }
 
             case .practiceRound:
-                WhiteSpaceView(engine: engine, player: player, onQuit: {
+                WhiteSpaceView(engine: engine, player: player, authState: authState, sync: sync, onQuit: {
                     withAnimation { phase = .home }
                 }, onRoundComplete: {
                     engine.startRound(mode: .final)
@@ -67,7 +81,7 @@ struct RootView: View {
                 })
 
             case .finalRound:
-                WhiteSpaceView(engine: engine, player: player, onQuit: {
+                WhiteSpaceView(engine: engine, player: player, authState: authState, sync: sync, onQuit: {
                     withAnimation { phase = .home }
                 })
             }
@@ -86,6 +100,17 @@ struct RootView: View {
                 phase = .signIn
             }
         }
+        .task {
+            // Re-establishes the Spacechat session from the phrase in the
+            // Keychain, then adopts a cloud save only when this device has
+            // none of its own — never overwriting real progress.
+            guard await sync.connect() else { return }
+            if let cloud = sync.cloudProfile(), player.profile.isUntouched {
+                player.profile = cloud
+                player.ensureUsername()
+                saveManager.saveNow(player.profile)
+            }
+        }
         .onAppear {
             HapticsManager.shared.isEnabled = player.profile.hapticsEnabled
             AudioManager.shared.soundEnabled = player.profile.soundEnabled
@@ -93,6 +118,13 @@ struct RootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
             saveManager.saveNow(player.profile)
+        }
+        // Push on background rather than on every autosave: the whole
+        // account database goes over the wire each time, so this is not a
+        // call to make on every eaten dot.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+            let snapshot = player.profile
+            Task { await sync.push(snapshot) }
         }
         .preferredColorScheme(.light)
         .statusBar(hidden: true)
