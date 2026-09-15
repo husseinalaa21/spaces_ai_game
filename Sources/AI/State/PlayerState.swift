@@ -27,6 +27,13 @@ struct PlayerProfile: Codable {
     var selectedUniverse: UniverseTheme = .white
     var selectedDotStyle: DotStyle = .classic
 
+    /// The dot the player designed in the Dot Studio, and whether it's the
+    /// one currently equipped. Kept separate from `selectedDotStyle` so
+    /// switching back to a catalog style and back again doesn't lose the
+    /// artwork.
+    var customDot: CustomDot = CustomDot()
+    var usesCustomDot: Bool = false
+
     /// Individually-bought premium cosmetics (§ new — "add more to buy...
     /// set price for them"), stored by raw value so a save from before a
     /// given case existed just decodes as "not owned" rather than failing.
@@ -99,6 +106,8 @@ struct PlayerProfile: Codable {
         isPremium = try c.decodeIfPresent(Bool.self, forKey: .isPremium) ?? false
         selectedUniverse = try c.decodeIfPresent(UniverseTheme.self, forKey: .selectedUniverse) ?? .white
         selectedDotStyle = try c.decodeIfPresent(DotStyle.self, forKey: .selectedDotStyle) ?? .classic
+        customDot = try c.decodeIfPresent(CustomDot.self, forKey: .customDot) ?? CustomDot()
+        usesCustomDot = try c.decodeIfPresent(Bool.self, forKey: .usesCustomDot) ?? false
         unlockedUniverses = try c.decodeIfPresent(Set<String>.self, forKey: .unlockedUniverses) ?? []
         unlockedDotStyles = try c.decodeIfPresent(Set<String>.self, forKey: .unlockedDotStyles) ?? []
         points = try c.decodeIfPresent(Int.self, forKey: .points) ?? 0
@@ -232,6 +241,14 @@ final class PlayerState: ObservableObject {
     // MARK: - Per-item cosmetic purchases (§ new — buy a single Universe or
     // Dot Style with Points, alongside the existing "unlock everything" AI+
     // subscription rather than instead of it).
+
+    /// The custom dot to render right now, or nil when a catalog `DotStyle`
+    /// is equipped. A blank custom dot never renders — there'd be nothing to
+    /// see and it would silently override the chosen style.
+    var activeCustomDot: CustomDot? {
+        guard profile.usesCustomDot, !profile.customDot.isBlank else { return nil }
+        return profile.customDot
+    }
 
     // MARK: - Earning (daily-capped)
 

@@ -480,7 +480,8 @@ struct WhiteSpaceView: View {
                                 stretch: CGFloat(stretchAmount), angle: Angle(radians: stretchAngleRadians),
                                 lookDirection: smoothedLook, time: t, eyeStyle: .whiteOnly,
                                 reduceMotion: player.profile.reduceMotion, eatPulse: arrivalFlashAmount,
-                                dotStyle: player.profile.selectedDotStyle)
+                                dotStyle: player.profile.selectedDotStyle,
+                                customDot: player.activeCustomDot)
         if engine.roundMode == .final, let form = player.activeForm {
             context.draw(Text(form.icon).font(.system(size: renderSize * 0.9)),
                          at: CGPoint(x: playerScreenPos.x, y: playerScreenPos.y + renderSize * 0.35))

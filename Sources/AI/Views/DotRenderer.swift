@@ -55,7 +55,7 @@ enum DotRenderer {
     static func drawPlayer(_ context: GraphicsContext, center: CGPoint, radius: CGFloat, color: Color,
                             stretch: CGFloat, angle: Angle, lookDirection: CGVector, time: Double,
                             eyeStyle: EyeStyle = .withPupil, reduceMotion: Bool = false, eatPulse: Double = 0,
-                            dotStyle: DotStyle = .classic) {
+                            dotStyle: DotStyle = .classic, customDot: CustomDot? = nil) {
         // `stretch` is driven by a slightly underdamped spring on the caller
         // side (see `WhiteSpaceView.updateStretch`), so it can overshoot a
         // touch past 1 for a bit of jelly pop — clamp the *shape* math to a
@@ -106,7 +106,10 @@ enum DotRenderer {
         // uses its own fixed accent. Computed before the body itself so the
         // ambient glow just below (drawn in world space, behind the body)
         // can already use it.
-        let visual = dotStyle.visual
+        // A custom dot replaces the catalog style outright — its own base
+        // colour, no accent tint, and none of the style's worn items, which
+        // would otherwise sit on top of the player's own artwork.
+        let visual = customDot == nil ? dotStyle.visual : DotStyle.classic.visual
         let effectiveAccent: Color
         if visual.hasRainbow {
             let hue = (time / 5.0).truncatingRemainder(dividingBy: 1.0)
@@ -114,7 +117,8 @@ enum DotRenderer {
         } else {
             effectiveAccent = visual.accentColor
         }
-        let styledColor = visual.mixAmount > 0 ? color.mix(with: effectiveAccent, amount: visual.mixAmount) : color
+        let baseColor = customDot?.baseColor.color ?? color
+        let styledColor = visual.mixAmount > 0 ? baseColor.mix(with: effectiveAccent, amount: visual.mixAmount) : baseColor
         let styleShine = visual.shine
 
         // A two-layer ambient bloom bleeding out into the space around the
@@ -334,12 +338,21 @@ enum DotRenderer {
         let cosT = CGFloat(cos(theta)), sinT = CGFloat(sin(theta))
         let localLook = CGVector(dx: lookDirection.dx * cosT + lookDirection.dy * sinT,
                                   dy: -lookDirection.dx * sinT + lookDirection.dy * cosT)
+        // The player's own artwork, clipped to the body and drawn in the same
+        // local frame as everything else, so it squashes, stretches and turns
+        // with the dot rather than floating flat on top of it. Drawn under
+        // the eyes so painting over them never blinds the dot.
+        if let customDot {
+            drawCustomArt(bodyContext, radius: radius, customDot: customDot, bodyPath: bodyPath)
+        }
+
         drawEyes(bodyContext, anchor: eyeAnchor, scale: eyeScale, lookDirection: localLook, time: time, style: eyeStyle)
 
         // Worn over the eyes, in the same local frame, so it squashes and
         // turns with the body instead of floating on top of it.
         drawEyeWear(bodyContext, anchor: eyeAnchor, scale: eyeScale,
-                    kind: visual.eyeWear, tint: styledColor.wornAccent(hueShift: 0.5))
+                    kind: customDot == nil ? visual.eyeWear : .none,
+                    tint: styledColor.wornAccent(hueShift: 0.5))
 
         // A second worn item below the hat (§ new — "more cloths": a bowtie,
         // scarf, collar, cape, or medal per style — see `DotStyle.Accessory`)
@@ -350,7 +363,8 @@ enum DotRenderer {
         // read as clothing, not as a shaded part of the dot), which also keeps
         // it distinct from the hat's own accent just below.
         drawAccessory(bodyContext, front: front, back: back, top: top, bottom: bottom,
-                      kind: visual.accessory, tint: styledColor.wornAccent(hueShift: 0.34),
+                      kind: customDot == nil ? visual.accessory : .none,
+                      tint: styledColor.wornAccent(hueShift: 0.34),
                       bodyPath: bodyPath)
 
         // A small worn accessory for premium Dot Styles (§ new — user asked
@@ -365,8 +379,56 @@ enum DotRenderer {
         // body's (§ new — "make their colors different than the dots") so the
         // hat reads as a worn object rather than part of the dot. `.classic`
         // gets nothing.
-        drawHat(bodyContext, top: top, hatSymbol: visual.hatSymbol,
+        drawHat(bodyContext, top: top, hatSymbol: customDot == nil ? visual.hatSymbol : nil,
                 tint: styledColor.wornAccent(hueShift: 0.5))
+    }
+
+    /// Paints a `CustomDot`'s strokes and stickers.
+    ///
+    /// Coordinates arrive normalized to the radius (see `DotStroke`), so this
+    /// is the single place that converts them to points — which is what lets
+    /// the same artwork render identically at 46pt in the picker and at full
+    /// size in the game.
+    ///
+    /// `bodyPath` clips everything: paint that ran past the edge in the
+    /// studio stays inside the dot here too, at any squash or stretch.
+    static func drawCustomArt(_ context: GraphicsContext, radius: CGFloat,
+                              customDot: CustomDot, bodyPath: Path) {
+        guard !customDot.isBlank else { return }
+        var art = context
+        art.clip(to: bodyPath)
+
+        for stroke in customDot.strokes {
+            guard let first = stroke.points.first else { continue }
+            let width = max(0.5, CGFloat(stroke.width) * radius)
+            if stroke.points.count == 1 {
+                // A single tap is a dot of paint, not a zero-length line —
+                // stroking a one-point path draws nothing at all.
+                let r = width / 2
+                art.fill(
+                    Path(ellipseIn: CGRect(x: first.x * radius - r, y: first.y * radius - r,
+                                            width: r * 2, height: r * 2)),
+                    with: .color(stroke.color.color)
+                )
+                continue
+            }
+            var path = Path()
+            path.move(to: CGPoint(x: first.x * radius, y: first.y * radius))
+            for point in stroke.points.dropFirst() {
+                path.addLine(to: CGPoint(x: point.x * radius, y: point.y * radius))
+            }
+            art.stroke(path, with: .color(stroke.color.color),
+                       style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
+        }
+
+        for sticker in customDot.stickers {
+            let size = max(1, CGFloat(sticker.scale) * radius)
+            let glyph = Text(Image(systemName: sticker.symbol))
+                .font(.system(size: size, weight: .semibold))
+                .foregroundColor(sticker.color.color)
+            art.draw(glyph, at: CGPoint(x: sticker.position.x * radius,
+                                        y: sticker.position.y * radius))
+        }
     }
 
     /// Eyewear worn over the eyes (§ new — "replace their eyes with glasses

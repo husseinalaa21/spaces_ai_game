@@ -50,6 +50,7 @@ struct MainMenuView: View {
     /// whole session.
     @StateObject private var store = StoreManager()
 
+    @State private var showDotStudio = false
     @State private var showPremiumSheet = false
     @State private var showStore = false
     @State private var showDailyReward = false
@@ -109,6 +110,7 @@ struct MainMenuView: View {
                     PlayPreviewDot(
                         reduceMotion: player.profile.reduceMotion,
                         dotStyle: player.profile.selectedDotStyle,
+                        customDot: player.activeCustomDot,
                         isUnlocked: { player.profile.owns($0) },
                         onSelectStyle: { player.profile.selectedDotStyle = $0; save() },
                         onLockedTap: { purchaseTarget = .dotStyle($0) }
@@ -143,6 +145,21 @@ struct MainMenuView: View {
                 viewMoreButton { browseKind = .universes }
 
                 Spacer()
+
+                Button { showDotStudio = true } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "paintbrush.pointed.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text(player.profile.customDot.isBlank ? "Customize Dot" : "Edit My Dot")
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(.black)
+                    .frame(width: 220, height: 48)
+                }
+                .overlay(Capsule().stroke(Color.black.opacity(0.18), lineWidth: 1.5))
+                .clipShape(Capsule())
+                .buttonStyle(PressableButtonStyle())
+                .padding(.bottom, 12)
 
                 Button(action: onPlay) {
                     Text("Play")
@@ -201,6 +218,9 @@ struct MainMenuView: View {
         .onChange(of: store.isSubscribed) { subscribed in
             player.refreshPremium(subscribed: subscribed)
             save()
+        }
+        .sheet(isPresented: $showDotStudio) {
+            DotStudioView(player: player, save: save)
         }
         .sheet(isPresented: $showPremiumSheet) {
             PremiumUnlockSheet(store: store, player: player, authState: authState, save: save) {
@@ -1590,6 +1610,9 @@ private struct OrbitingSparkles: View {
 private struct PlayPreviewDot: View {
     var reduceMotion: Bool = false
     var dotStyle: DotStyle = .classic
+    /// Shown on the centre dot only. The flanking dots stay as catalog
+    /// styles — they're the browse targets, and tapping one equips it.
+    var customDot: CustomDot? = nil
     var isUnlocked: (DotStyle) -> Bool = { _ in true }
     var onSelectStyle: (DotStyle) -> Void = { _ in }
     var onLockedTap: (DotStyle) -> Void = { _ in }
@@ -1697,7 +1720,8 @@ private struct PlayPreviewDot: View {
                 DotRenderer.drawPlayer(context, center: mainCenter, radius: 44 * breathe, color: blue,
                                         stretch: stretch, angle: angle,
                                         lookDirection: look(from: mainCenter, idlePhase: 0, driftDX: mainDriftDX, driftDY: mainDriftDY), time: t,
-                                        eyeStyle: .whiteOnly, reduceMotion: reduceMotion, dotStyle: dotStyle)
+                                        eyeStyle: .whiteOnly, reduceMotion: reduceMotion,
+                                        dotStyle: dotStyle, customDot: customDot)
 
                 // Soft, out-of-focus previews of the previous/next Dot Style
                 // — blurred and slightly dimmed, carousel-style, so the
