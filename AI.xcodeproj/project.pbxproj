@@ -41,7 +41,7 @@
 		07B472C9D880473EDD8D1668 /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
 		085F83481BCFC779F65BCB0A /* pop.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = pop.wav; sourceTree = "<group>"; };
 		11E8793DDEEBDB076716B0C5 /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
-		2548B5D89C3F7333DF34E6AD /* AI.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AI.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2548B5D89C3F7333DF34E6AD /* Spaces - Dots Game.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Spaces - Dots Game.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		25F557CF4498101945E155DF /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		2745730785AA222B795AFC7E /* ambient.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = ambient.wav; sourceTree = "<group>"; };
 		28BEA2C2EBFB86254DA89338 /* AuthState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthState.swift; sourceTree = "<group>"; };
@@ -173,7 +173,7 @@
 		B20A78DB477814DCCB520B61 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				2548B5D89C3F7333DF34E6AD /* AI.app */,
+				2548B5D89C3F7333DF34E6AD /* Spaces - Dots Game.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -222,7 +222,7 @@
 			packageProductDependencies = (
 			);
 			productName = AI;
-			productReference = 2548B5D89C3F7333DF34E6AD /* AI.app */;
+			productReference = 2548B5D89C3F7333DF34E6AD /* Spaces - Dots Game.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -380,8 +380,8 @@
 				CODE_SIGN_ENTITLEMENTS = AI.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = SVDD93966K;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SVDD93966K;
 				INFOPLIST_FILE = Sources/AI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -389,7 +389,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.husseinalaa.ai;
+				PRODUCT_BUNDLE_IDENTIFIER = com.spacechat.ai;
 				PRODUCT_NAME = "Spaces - Dots Game";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -463,8 +463,8 @@
 				CODE_SIGN_ENTITLEMENTS = AI.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = SVDD93966K;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SVDD93966K;
 				INFOPLIST_FILE = Sources/AI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -472,7 +472,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.husseinalaa.ai;
+				PRODUCT_BUNDLE_IDENTIFIER = com.spacechat.ai;
 				PRODUCT_NAME = "Spaces - Dots Game";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
