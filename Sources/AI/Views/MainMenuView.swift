@@ -678,6 +678,7 @@ private struct CosmeticBrowseSheet: View {
                         owned: player.profile.owns(previewDotStyle),
                         equipped: player.profile.selectedDotStyle == previewDotStyle,
                         price: previewDotStyle.price,
+                        plain: true,
                         onEquip: { player.profile.selectedDotStyle = previewDotStyle; save() },
                         onBuy: { if player.purchase(previewDotStyle) { save(); HapticsManager.shared.success() } }) {
                 DotStylePreviewCanvas(style: previewDotStyle, diameter: 88)
@@ -687,7 +688,7 @@ private struct CosmeticBrowseSheet: View {
 
     @ViewBuilder
     private func previewCard<Preview: View>(
-        name: String, owned: Bool, equipped: Bool, price: Int,
+        name: String, owned: Bool, equipped: Bool, price: Int, plain: Bool = false,
         onEquip: @escaping () -> Void, onBuy: @escaping () -> Void, @ViewBuilder preview: () -> Preview
     ) -> some View {
         VStack(spacing: 12) {
@@ -727,8 +728,18 @@ private struct CosmeticBrowseSheet: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
-        .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+        // Dot Styles pass `plain` (§ new — "for the custom dots don't use
+        // border radius or shadows or background behind them"): the dot sits
+        // straight on the sheet with no card, rounding or drop shadow around
+        // it. Universes keep the card, since a Universe swatch *is* a
+        // rounded tile and needs the surface to sit on.
+        .background {
+            if !plain {
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color.white)
+                    .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+            }
+        }
     }
 
     // MARK: - Grids (tap = preview only, never commits)
@@ -1126,9 +1137,7 @@ private struct StoreView: View {
                     )
                 }
             }
-            .padding(16)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
-            .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+            .padding(.vertical, 4)
         }
     }
 
