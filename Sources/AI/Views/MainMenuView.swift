@@ -172,8 +172,16 @@ struct MainMenuView: View {
                 .clipShape(Capsule())
                 .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
                 .buttonStyle(PressableButtonStyle())
-                .padding(.bottom, 48)
+                .padding(.bottom, 40)
             }
+            // Starts below the banner rather than at the top of the display.
+            // The column's leading Spacer only distributes leftover space, so
+            // on a short screen the username row underneath it was sliding up
+            // behind the Home/AI/Messages banner.
+            .padding(.top, GameHubView.bannerTopInset + 46)
+            // And clear of the home indicator at the other end, now that the
+            // page runs underneath it.
+            .padding(.bottom, GameHubView.homeIndicatorInset)
             .opacity(hasAppeared ? 1 : 0)
             .offset(y: hasAppeared ? 0 : 12)
 
@@ -185,11 +193,11 @@ struct MainMenuView: View {
                     pointsBadge
                 }
                 .padding(.horizontal, 16)
-                // Clears the hub banner, which now sits below the device's
-                // own top inset rather than at a fixed 8pt — a fixed number
-                // here would tuck the Store button under the banner on a
-                // Dynamic Island phone.
-                .padding(.top, GameHubView.bannerTopInset + 54)
+                // Sits just under the banner. Derived from the device's real
+                // top inset, not a fixed number — that would tuck the Store
+                // button under the banner on a Dynamic Island phone and leave
+                // a gap on an older one.
+                .padding(.top, GameHubView.bannerTopInset + 52)
                 Spacer()
             }
             .opacity(hasAppeared ? 1 : 0)
