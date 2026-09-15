@@ -1052,10 +1052,15 @@ private struct StoreView: View {
 
     private let gold = DotStyle.gold.swatchColor
 
-    private let pointPacks: [(name: String, points: Int, price: String, icon: String, color: Color, highlight: Bool)] = [
-        ("Starter Pack", 500, "$0.99", "shippingbox.fill", IconPalette.blue, false),
-        ("Value Pack", 1500, "$2.99", "gift.fill", IconPalette.pink, true),
-        ("Mega Pack", 5000, "$7.99", "crown.fill", IconPalette.gold, false)
+    /// Starter sets the base rate (~505 Points per dollar); Value and Mega
+    /// pay that rate doubled and tripled (§ new — "add extra points to value
+    /// and extra points to the mega... like 3x"). Before this, Value was
+    /// actually *worse* value per dollar than Starter, so the middle tier had
+    /// no reason to exist.
+    private let pointPacks: [(name: String, points: Int, multiplier: Int, price: String, icon: String, color: Color, highlight: Bool)] = [
+        ("Starter Pack", 500, 1, "$0.99", "shippingbox.fill", IconPalette.blue, false),
+        ("Value Pack", 3000, 2, "$2.99", "gift.fill", IconPalette.pink, false),
+        ("Mega Pack", 12000, 3, "$7.99", "crown.fill", IconPalette.gold, true)
     ]
 
     var body: some View {
@@ -1306,8 +1311,13 @@ private struct StoreView: View {
                                     Image("Sparkle").renderingMode(.template).resizable()
                                         .frame(width: 11, height: 11).foregroundColor(gold)
                                     Text("+\(pack.points)")
-                                        .font(.system(size: 13))
-                                        .foregroundColor(.black.opacity(0.55))
+                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        .foregroundColor(.black.opacity(0.7))
+                                    if pack.multiplier > 1 {
+                                        Text("· \(pack.multiplier)× value")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(pack.color)
+                                    }
                                 }
                             }
                             Spacer()
@@ -1321,12 +1331,13 @@ private struct StoreView: View {
                         .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
                         .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
                         .overlay(alignment: .topTrailing) {
-                            if pack.highlight {
-                                Text("BEST VALUE")
+                            if pack.multiplier > 1 {
+                                Text(pack.highlight ? "BEST VALUE · \(pack.multiplier)× POINTS"
+                                                    : "\(pack.multiplier)× POINTS")
                                     .font(.system(size: 9, weight: .bold, design: .rounded))
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 8).padding(.vertical, 4)
-                                    .background(gold, in: Capsule())
+                                    .background(pack.highlight ? gold : pack.color, in: Capsule())
                                     .offset(x: -10, y: -8)
                             }
                         }
@@ -1397,7 +1408,7 @@ private struct StoreView: View {
         }
     }
 
-    private func buyPointPack(_ pack: (name: String, points: Int, price: String, icon: String, color: Color, highlight: Bool)) {
+    private func buyPointPack(_ pack: (name: String, points: Int, multiplier: Int, price: String, icon: String, color: Color, highlight: Bool)) {
         player.profile.points += pack.points
         save()
         HapticsManager.shared.impact(.light)
