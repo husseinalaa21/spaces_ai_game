@@ -17,12 +17,18 @@ struct PlayerProfile: Codable {
     var hapticsEnabled: Bool = true
     var reduceMotion: Bool = false
 
-    /// Local stand-in for a real AI+ entitlement (§27) — there's no
-    /// StoreKit/backend wired up yet (see README), so this is just a plain
-    /// saved flag the main menu's premium sheet flips on in test mode, the
-    /// same way `AuthState`'s "Continue" button stands in for real Sign in
-    /// with Apple until that's wired up too.
+    /// Whether Premium is active right now, from either source. Recomputed
+    /// by `PlayerState.refreshPremium(subscribed:)` — never set directly any
+    /// more. It's still persisted so the picker isn't briefly locked on
+    /// launch while StoreKit is queried, but Apple's own entitlement always
+    /// wins once that query returns.
     var isPremium: Bool = false
+
+    /// Premium bought with in-game Points rather than money (`StoreView`'s
+    /// "Redeem N Points"). Kept separate from the real subscription so that
+    /// a lapsed or refunded App Store subscription doesn't take away
+    /// something the player paid for with Points they earned.
+    var premiumFromPoints: Bool = false
     var selectedUniverse: UniverseTheme = .white
     var selectedDotStyle: DotStyle = .classic
 
@@ -38,8 +44,8 @@ struct PlayerProfile: Codable {
     /// A simple earned/spendable soft currency — awarded automatically for
     /// eating, finishing a form, and leveling up (`GameEngine.absorb`), shown
     /// top-right on the main menu, and spendable in the Store (`StoreView`)
-    /// toward AI+ Premium. Like `isPremium`, the "buy more points" side of
-    /// the Store is a local test-mode stand-in — no real payment is taken.
+    /// toward Premium. The "buy more points" side of
+    /// the Store is still a local stand-in — no real payment is taken there.
     var points: Int = 0
 
     /// Daily login reward streak (§ new retention nudge, `DailyRewardSheet`
@@ -89,6 +95,7 @@ struct PlayerProfile: Codable {
         hapticsEnabled = try c.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? true
         reduceMotion = try c.decodeIfPresent(Bool.self, forKey: .reduceMotion) ?? false
         isPremium = try c.decodeIfPresent(Bool.self, forKey: .isPremium) ?? false
+        premiumFromPoints = try c.decodeIfPresent(Bool.self, forKey: .premiumFromPoints) ?? false
         selectedUniverse = try c.decodeIfPresent(UniverseTheme.self, forKey: .selectedUniverse) ?? .white
         selectedDotStyle = try c.decodeIfPresent(DotStyle.self, forKey: .selectedDotStyle) ?? .classic
         unlockedUniverses = try c.decodeIfPresent(Set<String>.self, forKey: .unlockedUniverses) ?? []
@@ -214,6 +221,17 @@ final class PlayerState: ObservableObject {
     // MARK: - Per-item cosmetic purchases (§ new — buy a single Universe or
     // Dot Style with Points, alongside the existing "unlock everything" AI+
     // subscription rather than instead of it).
+
+    /// Folds Apple's live subscription state together with Points-redeemed
+    /// Premium. Called on launch, whenever `StoreManager.isSubscribed`
+    /// changes, and after a successful purchase or restore — so cancelling,
+    /// lapsing or refunding the subscription re-locks the premium cosmetics
+    /// unless they were redeemed with Points.
+    func refreshPremium(subscribed: Bool) {
+        let active = subscribed || profile.premiumFromPoints
+        guard profile.isPremium != active else { return }
+        profile.isPremium = active
+    }
 
     /// Attempts to spend Points to unlock a single Universe. No-ops (and
     /// returns `false`) if it's already owned or there aren't enough Points.

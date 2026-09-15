@@ -43,6 +43,11 @@ struct MainMenuView: View {
     var save: () -> Void = {}
     let onPlay: () -> Void
 
+    /// Owned here and handed down to every screen that sells Premium, so
+    /// there's exactly one product load and one transaction listener for the
+    /// whole session.
+    @StateObject private var store = StoreManager()
+
     @State private var showPremiumSheet = false
     @State private var showStore = false
     @State private var showDailyReward = false
@@ -175,15 +180,26 @@ struct MainMenuView: View {
                 withAnimation(.easeOut(duration: 0.5)) { hasAppeared = true }
             }
         }
+        // Ask Apple what this Apple ID actually owns, every time the menu
+        // appears — a subscription can be cancelled, lapse, be refunded or be
+        // bought on another device entirely outside this app.
+        .task {
+            await store.loadProduct()
+            await store.refreshEntitlement()
+            player.refreshPremium(subscribed: store.isSubscribed)
+            save()
+        }
+        .onChange(of: store.isSubscribed) { subscribed in
+            player.refreshPremium(subscribed: subscribed)
+            save()
+        }
         .sheet(isPresented: $showPremiumSheet) {
-            PremiumUnlockSheet(onUnlock: {
-                player.profile.isPremium = true
-                save()
+            PremiumUnlockSheet(store: store, player: player, save: save) {
                 showPremiumSheet = false
-            })
+            }
         }
         .sheet(isPresented: $showStore) {
-            StoreView(player: player, save: save)
+            StoreView(player: player, store: store, save: save)
         }
         .sheet(isPresented: $showDailyReward) {
             DailyRewardSheet(player: player, save: save)
@@ -792,16 +808,21 @@ private struct CosmeticBrowseSheet: View {
 
 }
 
-/// A plain explainer sheet for the AI+ premium picker options — there's no
-/// StoreKit/backend wired up yet (see README's "What's next"), so this is a
-/// clearly-labeled local test toggle, the same stand-in role `AuthState`'s
-/// "Continue" button plays for real Sign in with Apple until that's built.
+/// The real paywall for Premium. Everything here goes through StoreKit:
+/// the price comes from the product, the button opens Apple's purchase
+/// sheet, and entitlement is read back from Apple afterwards. App Review
+/// requires the auto-renew disclosure, a Restore Purchases control and
+/// reachable Terms/Privacy links on any screen that sells a subscription
+/// (Guideline 3.1.2), so all four live here.
 private struct PremiumUnlockSheet: View {
-    let onUnlock: () -> Void
+    @ObservedObject var store: StoreManager
+    @ObservedObject var player: PlayerState
+    var save: () -> Void
+    var onPurchased: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 16) {
             Capsule()
                 .fill(Color.black.opacity(0.15))
                 .frame(width: 36, height: 4)
@@ -810,37 +831,100 @@ private struct PremiumUnlockSheet: View {
             Text("Premium")
                 .font(.system(size: 22, weight: .bold, design: .rounded))
 
-            Text("Unlocks extra Universe looks and Gold/Diamond/Galaxy dot styles — cosmetic only, never a gameplay advantage (§74).")
+            Text("Unlocks every Universe look and every Dot Style — cosmetic only, never a gameplay advantage.")
                 .font(.system(size: 14))
                 .foregroundColor(.black.opacity(0.65))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
-            Text("No real purchase flow is wired up yet — this just unlocks the picker locally for testing.")
-                .font(.system(size: 12))
-                .foregroundColor(.black.opacity(0.4))
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-
-            Button(action: onUnlock) {
-                Text("Preview Premium (Test Mode)")
+            if player.profile.isPremium {
+                Label("Premium is active.", systemImage: "checkmark.seal.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.green)
+                    .padding(.top, 8)
+            } else if store.isLoadingProduct {
+                ProgressView().padding(.top, 16)
+            } else {
+                Button(action: buy) {
+                    Group {
+                        if store.purchaseInFlight {
+                            ProgressView().tint(.white)
+                        } else {
+                            Text(store.subscribeTitle)
+                        }
+                    }
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
-                    .frame(width: 240, height: 48)
+                    .frame(width: 260, height: 48)
+                }
+                .background(store.premiumProduct == nil ? Color.black.opacity(0.3) : Color.black)
+                .clipShape(Capsule())
+                .buttonStyle(PressableButtonStyle())
+                .disabled(store.premiumProduct == nil || store.purchaseInFlight)
+                .padding(.top, 8)
+
+                // Required disclosure — price, period and auto-renewal, in
+                // plain text right next to the buy button.
+                Text(store.renewalDisclosure)
+                    .font(.system(size: 11))
+                    .foregroundColor(.black.opacity(0.45))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
             }
-            .background(Color.black)
-            .clipShape(Capsule())
-            .buttonStyle(PressableButtonStyle())
-            .padding(.top, 8)
+
+            if let message = store.errorMessage {
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundColor(.red.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+            }
+
+            Button(action: restore) {
+                Text(store.restoreInFlight ? "Restoring…" : "Restore Purchases")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.black.opacity(0.6))
+            }
+            .disabled(store.restoreInFlight)
+
+            HStack(spacing: 14) {
+                Link("Terms of Use", destination: StoreManager.termsOfUseURL)
+                Text("·").foregroundColor(.black.opacity(0.3))
+                Link("Privacy Policy", destination: StoreManager.privacyPolicyURL)
+            }
+            .font(.system(size: 11))
+            .foregroundColor(.black.opacity(0.45))
 
             Button("Not Now") { dismiss() }
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.black.opacity(0.5))
                 .padding(.bottom, 12)
 
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .presentationDetents([.fraction(0.45)])
+        .presentationDetents([.fraction(0.72)])
+        .task { await store.loadProduct() }
+    }
+
+    private func buy() {
+        Task {
+            let ok = await store.purchasePremium()
+            player.refreshPremium(subscribed: store.isSubscribed)
+            save()
+            if ok {
+                HapticsManager.shared.success()
+                onPurchased()
+            }
+        }
+    }
+
+    private func restore() {
+        Task {
+            await store.restorePurchases()
+            player.refreshPremium(subscribed: store.isSubscribed)
+            save()
+            if store.isSubscribed { HapticsManager.shared.success() }
+        }
     }
 }
 
@@ -956,13 +1040,13 @@ private struct DailyRewardSheet: View {
 
 /// The Store — a full page (opened from the main menu's top-left bag icon),
 /// not just a small confirmation sheet. Two ways to reach AI+ Premium here:
-/// a mock membership purchase (same local test-mode pattern as
-/// `PremiumUnlockSheet`) or redeeming Points actually earned from play; a
-/// second section "sells" Point Packs the same honest way. Exactly like
-/// `PremiumUnlockSheet`, no StoreKit/backend is wired up (see README) — every
-/// button here only ever changes the local saved profile, and says so.
+/// a real App Store subscription purchase of `spaces_vip` (see
+/// `StoreManager`) or redeeming Points actually earned from play. Point
+/// Packs remain local stand-ins until their consumable products exist in
+/// App Store Connect.
 private struct StoreView: View {
     @ObservedObject var player: PlayerState
+    @ObservedObject var store: StoreManager
     var save: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -986,7 +1070,7 @@ private struct StoreView: View {
                     pointPacksSection
                     earnPointsSection
 
-                    Text("No real payment is processed anywhere in this Store yet — every button here only changes your local saved profile, for testing.")
+                    Text("Premium is a real App Store subscription. Point Packs are not wired to StoreKit yet and only change your local saved profile.")
                         .font(.system(size: 12))
                         .foregroundColor(.black.opacity(0.4))
                         .padding(.top, 4)
@@ -994,6 +1078,11 @@ private struct StoreView: View {
                 .padding(20)
             }
             .background(Color(white: 0.96).ignoresSafeArea())
+            .task {
+                await store.loadProduct()
+                await store.refreshEntitlement()
+                player.refreshPremium(subscribed: store.isSubscribed)
+            }
             .navigationTitle("Store")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1041,7 +1130,7 @@ private struct StoreView: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("Premium").font(.system(size: 18, weight: .bold, design: .rounded))
-                Text("Unlocks every Universe look and every Dot Style (Gold, Diamond, Galaxy) — cosmetic only, never a gameplay advantage (§74).")
+                Text("Unlocks every Universe look and every Dot Style — cosmetic only, never a gameplay advantage.")
                     .font(.system(size: 13))
                     .foregroundColor(.black.opacity(0.6))
 
@@ -1052,15 +1141,27 @@ private struct StoreView: View {
                 } else {
                     Button(action: unlockPremium) {
                         HStack {
-                            Text("Subscribe — $9.99/mo (Test Mode)")
+                            if store.purchaseInFlight {
+                                ProgressView().tint(.white)
+                            } else {
+                                Text(store.subscribeTitle)
+                            }
                             Spacer()
                         }
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundColor(.white)
                         .padding(.horizontal, 16).padding(.vertical, 12)
-                        .background(Color.black, in: RoundedRectangle(cornerRadius: 12))
+                        .background(store.premiumProduct == nil ? Color.black.opacity(0.3) : Color.black,
+                                    in: RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(PressableButtonStyle())
+                    .disabled(store.premiumProduct == nil || store.purchaseInFlight)
+
+                    // Guideline 3.1.2 disclosure, shown wherever the
+                    // subscription can be bought.
+                    Text(store.renewalDisclosure)
+                        .font(.system(size: 11))
+                        .foregroundColor(.black.opacity(0.45))
 
                     let canRedeem = player.profile.points >= Self.membershipPointsCost
                     Button(action: redeemPremiumWithPoints) {
@@ -1081,6 +1182,23 @@ private struct StoreView: View {
                     .buttonStyle(PressableButtonStyle())
                     .disabled(!canRedeem)
                 }
+
+                if let message = store.errorMessage {
+                    Text(message)
+                        .font(.system(size: 12))
+                        .foregroundColor(.red.opacity(0.8))
+                }
+
+                HStack(spacing: 14) {
+                    Button(store.restoreInFlight ? "Restoring…" : "Restore Purchases", action: restore)
+                        .disabled(store.restoreInFlight)
+                    Spacer()
+                    Link("Terms", destination: StoreManager.termsOfUseURL)
+                    Link("Privacy", destination: StoreManager.privacyPolicyURL)
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.black.opacity(0.55))
+                .padding(.top, 2)
             }
             .padding(16)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
@@ -1275,18 +1393,36 @@ private struct StoreView: View {
         return formatter.string(from: NSNumber(value: player.profile.points)) ?? "\(player.profile.points)"
     }
 
-    // MARK: - Actions (all local/test-mode — no real payment is ever taken)
+    // MARK: - Actions
 
+    /// Real App Store purchase of `spaces_vip`. Nothing is granted locally —
+    /// entitlement comes back from Apple and is folded in by
+    /// `PlayerState.refreshPremium(subscribed:)`.
     private func unlockPremium() {
-        player.profile.isPremium = true
-        save()
-        HapticsManager.shared.success()
+        Task {
+            let ok = await store.purchasePremium()
+            player.refreshPremium(subscribed: store.isSubscribed)
+            save()
+            if ok { HapticsManager.shared.success() }
+        }
     }
 
+    private func restore() {
+        Task {
+            await store.restorePurchases()
+            player.refreshPremium(subscribed: store.isSubscribed)
+            save()
+            if store.isSubscribed { HapticsManager.shared.success() }
+        }
+    }
+
+    /// Premium bought with earned Points rather than money. Recorded on its
+    /// own flag so a later subscription lapse can't revoke it.
     private func redeemPremiumWithPoints() {
         guard player.profile.points >= Self.membershipPointsCost else { return }
         player.profile.points -= Self.membershipPointsCost
-        player.profile.isPremium = true
+        player.profile.premiumFromPoints = true
+        player.refreshPremium(subscribed: store.isSubscribed)
         save()
         HapticsManager.shared.success()
     }
