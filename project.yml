@@ -31,7 +31,7 @@ targets:
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
         UIViewControllerBasedStatusBarAppearance: false
-        CFBundleDisplayName: "Spaces - Dots and AI"
+        CFBundleDisplayName: "Spaces - Dots Game"
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         ITSAppUsesNonExemptEncryption: false
@@ -39,7 +39,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.husseinalaa.ai
         DEVELOPMENT_TEAM: SVDD93966K
-        PRODUCT_NAME: "Spaces - Dots and AI"
+        PRODUCT_NAME: "Spaces - Dots Game"
         CODE_SIGN_STYLE: Automatic
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
