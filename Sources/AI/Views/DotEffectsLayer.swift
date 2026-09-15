@@ -58,18 +58,28 @@ struct DotEffectsLayer: View {
                 // Anything well off-screen isn't worth spawning particles for.
                 guard (-0.15...1.15).contains(unitX), (-0.15...1.15).contains(unitY) else { return }
 
-                let tint = effect.color.color
+                // VortexSystem.ColorMode is Codable, so it carries Vortex's
+                // OWN Color struct — not SwiftUI's, which isn't Codable.
+                // Handing it a SwiftUI Color does not compile.
+                //
+                // AbsorbEffect already stores plain r/g/b doubles, so this
+                // converts directly with no UIColor round-trip.
+                let c = effect.color
+                func lighten(_ amount: Double) -> VortexSystem.Color {
+                    VortexSystem.Color(red: min(1, c.r + amount),
+                                       green: min(1, c.g + amount),
+                                       blue: min(1, c.b + amount))
+                }
                 system.position = [unitX, unitY]
-                system.colors = .random(
-                    tint,
-                    tint.mix(with: .white, amount: 0.45),
-                    tint.mix(with: .white, amount: 0.8)
-                )
+                system.colors = .random(lighten(0), lighten(0.3), lighten(0.65))
 
                 // A rival twice the size of a collectible should visibly read
                 // as a bigger event, so count, spread and scale all follow
                 // `magnitude` — the radius of whatever was eaten.
-                let scale = min(2.4, max(0.55, effect.magnitude / 13))
+                // Explicitly Double: magnitude is a CGFloat, and every Vortex
+                // property here is a Double. Swift will bridge the two, but
+                // spelling it out keeps the arithmetic unambiguous.
+                let scale = min(2.4, max(0.55, Double(effect.magnitude) / 13))
                 system.burstCount = Int(14 * scale)
                 system.size = 0.35 * scale
                 system.speed = 0.6 * scale

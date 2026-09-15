@@ -48,6 +48,9 @@ struct DotStudioView: View {
     /// without limit.
     @State private var history: [CustomDot] = []
     @State private var liveStroke: DotStroke?
+    /// True between a drag's first and last event, so the hit-test that picks
+    /// a sticker runs once per drag rather than on every movement.
+    @State private var isDraggingSticker = false
     @State private var showFullTray = false
 
     private static let historyLimit = 40
@@ -158,13 +161,30 @@ struct DotStudioView: View {
                 .onChanged { value in
                     let point = normalize(value.location, size: size, radius: radius)
                     switch tool {
-                    case .paint: extendStroke(to: point)
-                    case .stickers: moveSelectedSticker(to: point)
-                    case .base: break
+                    case .paint:
+                        extendStroke(to: point)
+                    case .stickers:
+                        // The first touch of a drag picks whichever sticker is
+                        // under the finger, so any of them can be moved — not
+                        // just the one most recently added.
+                        if !isDraggingSticker {
+                            isDraggingSticker = true
+                            if let hit = sticker(at: point) {
+                                selectedSticker = hit.id
+                                stickerScale = hit.scale
+                            }
+                            // Snapshot once per drag so Undo steps back to
+                            // where the sticker started, not one pixel back.
+                            if selectedSticker != nil { pushHistory() }
+                        }
+                        moveSelectedSticker(to: point)
+                    case .base:
+                        break
                     }
                 }
                 .onEnded { _ in
                     if tool == .paint { commitStroke() }
+                    isDraggingSticker = false
                 }
         )
     }
@@ -230,6 +250,17 @@ struct DotStudioView: View {
         HapticsManager.shared.impact(.light)
     }
 
+    /// Topmost sticker whose glyph contains `point`, both in normalized
+    /// space. Reversed because later stickers draw on top.
+    private func sticker(at point: CGPoint) -> DotSticker? {
+        draft.stickers.reversed().first { sticker in
+            let dx = point.x - sticker.position.x
+            let dy = point.y - sticker.position.y
+            let reach = CGFloat(sticker.scale) * 0.6
+            return (dx * dx + dy * dy) <= reach * reach
+        }
+    }
+
     private func moveSelectedSticker(to point: CGPoint) {
         guard let id = selectedSticker,
               let index = draft.stickers.firstIndex(where: { $0.id == id }) else { return }
@@ -287,8 +318,8 @@ struct DotStudioView: View {
         case .paint: return "Drag on the dot to paint. Paint stays inside the dot."
         case .stickers:
             return draft.stickers.isEmpty
-                ? "Tap an icon to add it, then drag it on the dot to place it."
-                : "Drag on the dot to move the selected icon."
+                ? "Tap an icon below to add it, then drag it on the dot to place it."
+                : "Drag any icon on the dot to move it. Tap one to select it for resizing."
         case .base: return "Pick the dot's base color."
         }
     }
