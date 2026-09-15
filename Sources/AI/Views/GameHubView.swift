@@ -95,7 +95,7 @@ struct GameHubView: View {
                     .font(.system(size: 17, weight: .semibold))
             }
             tabButton(.spacechatAI) {
-                SpacechatMark(size: 18)
+                SpacechatMark(size: 19, active: tab == .spacechatAI)
             }
             tabButton(.messages) {
                 Image(systemName: "bubble.left.and.bubble.right.fill")
@@ -125,31 +125,60 @@ struct GameHubView: View {
     }
 }
 
-/// The Spacechat pixel mark, drawn rather than shipped as an image: a 3x3
-/// grid of squares with the centre one filled solid, echoing the pixel logo.
-/// Tints with `foregroundColor` like an SF Symbol, so the banner's selected
-/// and unselected states apply to it unchanged.
+/// The Spacechat logo, drawn from its own source rather than shipped as a
+/// PNG.
+///
+/// Transcribed cell for cell from `spacechat_vision/spacechat_pixel_logo.svg`
+/// — a 4x4 pixel grid with the top-left quadrant empty, in the four brand
+/// blues. Drawing it means it stays crisp at any size (the SVG itself is
+/// `shape-rendering="crispEdges"`, so square cells are the design, not an
+/// approximation) and needs no asset catalog entry.
+///
+/// `active` handles the banner's selected state: a brand logo shouldn't be
+/// tinted flat black the way an SF Symbol is, so it keeps its real colours
+/// when selected and flattens to grey when not.
 struct SpacechatMark: View {
     var size: CGFloat = 18
+    var active: Bool = true
+
+    private struct Cell {
+        let x: Int
+        let y: Int
+        let color: Color
+        /// Grey level used when the tab isn't selected, chosen to preserve
+        /// the logo's own light-to-dark structure.
+        let mutedWhite: Double
+    }
+
+    private static let pale = Color(red: 204 / 255, green: 252 / 255, blue: 252 / 255)
+    private static let cyan = Color(red: 36 / 255, green: 192 / 255, blue: 228 / 255)
+    private static let blue = Color(red: 12 / 255, green: 150 / 255, blue: 216 / 255)
+    private static let navy = Color(red: 0 / 255, green: 72 / 255, blue: 108 / 255)
+
+    private static let cells: [Cell] = [
+        Cell(x: 2, y: 0, color: pale, mutedWhite: 0.78), Cell(x: 3, y: 0, color: pale, mutedWhite: 0.78),
+        Cell(x: 2, y: 1, color: cyan, mutedWhite: 0.62), Cell(x: 3, y: 1, color: pale, mutedWhite: 0.78),
+        Cell(x: 0, y: 2, color: blue, mutedWhite: 0.48), Cell(x: 1, y: 2, color: blue, mutedWhite: 0.48),
+        Cell(x: 2, y: 2, color: cyan, mutedWhite: 0.62), Cell(x: 3, y: 2, color: cyan, mutedWhite: 0.62),
+        Cell(x: 0, y: 3, color: navy, mutedWhite: 0.34), Cell(x: 1, y: 3, color: blue, mutedWhite: 0.48),
+        Cell(x: 2, y: 3, color: blue, mutedWhite: 0.48), Cell(x: 3, y: 3, color: cyan, mutedWhite: 0.62)
+    ]
 
     var body: some View {
         Canvas { context, canvasSize in
-            let cell = canvasSize.width / 3
-            let inset = cell * 0.18
-            for row in 0..<3 {
-                for column in 0..<3 {
-                    let isCentre = row == 1 && column == 1
-                    let rect = CGRect(x: CGFloat(column) * cell + inset,
-                                      y: CGFloat(row) * cell + inset,
-                                      width: cell - inset * 2,
-                                      height: cell - inset * 2)
-                    context.fill(
-                        Path(roundedRect: rect, cornerRadius: cell * 0.22),
-                        with: .color(isCentre ? .primary : .primary.opacity(0.45))
-                    )
-                }
+            let cell = canvasSize.width / 4
+            for item in Self.cells {
+                // Half a point of overlap: adjacent cells otherwise show
+                // hairline seams between them at fractional sizes.
+                let rect = CGRect(x: CGFloat(item.x) * cell,
+                                  y: CGFloat(item.y) * cell,
+                                  width: cell + 0.5,
+                                  height: cell + 0.5)
+                context.fill(Path(rect),
+                             with: .color(active ? item.color : Color(white: item.mutedWhite)))
             }
         }
         .frame(width: size, height: size)
     }
+
 }

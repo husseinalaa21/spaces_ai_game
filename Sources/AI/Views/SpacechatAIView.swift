@@ -44,7 +44,7 @@ struct SpacechatAIView: View {
     private var signedOutNotice: some View {
         VStack(spacing: 12) {
             Spacer()
-            SpacechatMark(size: 40).foregroundColor(.black.opacity(0.35))
+            SpacechatMark(size: 44)
             Text("Spacechat AI")
                 .font(.system(size: 19, weight: .bold, design: .rounded))
             Text("Sign in with a Spacechat phrase to chat with Spacechat AI.")
@@ -98,7 +98,7 @@ struct SpacechatAIView: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                SpacechatMark(size: 20).foregroundColor(.black)
+                SpacechatMark(size: 20)
                 Text("Spacechat AI")
                     .font(.system(size: 17, weight: .bold, design: .rounded))
             }
