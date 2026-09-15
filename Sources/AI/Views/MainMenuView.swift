@@ -15,6 +15,22 @@ struct PressableButtonStyle: ButtonStyle {
     }
 }
 
+/// One accent color per small icon (§ new — icons used to be uniformly gold
+/// on a tinted circle; now each carries its own hue and sits directly on the
+/// surface with no shape behind it, so the icon itself does the work).
+enum IconPalette {
+    static let blue   = Color(red: 0.16, green: 0.47, blue: 1.00)
+    static let teal   = Color(red: 0.08, green: 0.70, blue: 0.74)
+    static let green  = Color(red: 0.13, green: 0.70, blue: 0.42)
+    static let gold   = Color(red: 0.90, green: 0.68, blue: 0.11)
+    static let orange = Color(red: 0.97, green: 0.55, blue: 0.13)
+    static let pink   = Color(red: 0.95, green: 0.35, blue: 0.60)
+    static let purple = Color(red: 0.58, green: 0.35, blue: 0.94)
+
+    /// Colors for the 7-day reward ladder, one per day.
+    static let ladder: [Color] = [blue, teal, green, gold, orange, pink, purple]
+}
+
 /// Shown right after sign-in (or straight after the splash screen, for a
 /// returning player), before White Space actually starts. An animated
 /// preview of the player dot — the same blue as the app's own logo dot, no
@@ -891,29 +907,28 @@ private struct DailyRewardSheet: View {
         let isToday = index == displayIndex
         let isPast = index < displayIndex
         let isChecked = isPast || (isToday && !player.canClaimDailyReward)
+        let dayColor = IconPalette.ladder[index % IconPalette.ladder.count]
 
         return VStack(spacing: 6) {
             Text("D\(index + 1)")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundColor(.black.opacity(0.4))
             ZStack {
-                Circle()
-                    .fill(isToday ? gold.opacity(0.18) : (isPast ? Color.black.opacity(0.06) : Color.black.opacity(0.04)))
-                    .frame(width: 36, height: 36)
                 if isChecked {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(isToday ? gold : .black.opacity(0.3))
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(dayColor)
                 } else {
                     Image("Sparkle")
                         .renderingMode(.template)
                         .resizable()
-                        .frame(width: 13, height: 13)
-                        .foregroundColor(isToday ? gold : .black.opacity(0.25))
+                        .frame(width: 18, height: 18)
+                        .foregroundColor(dayColor)
                 }
             }
+            .frame(width: 36, height: 36)
+            .opacity(isToday ? 1.0 : (isPast ? 0.7 : 0.3))
             .scaleEffect(isToday ? 1.14 : 1.0)
-            .shadow(color: isToday ? gold.opacity(0.5) : .clear, radius: isToday ? 6 : 0)
             Text("\(PlayerState.dailyRewardLadder[index])")
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundColor(.black.opacity(0.5))
@@ -943,10 +958,10 @@ private struct StoreView: View {
     static let membershipPointsCost = 2000
     private let gold = DotStyle.gold.swatchColor
 
-    private let pointPacks: [(name: String, points: Int, price: String, icon: String, highlight: Bool)] = [
-        ("Starter Pack", 500, "$0.99", "shippingbox.fill", false),
-        ("Value Pack", 1500, "$2.99", "gift.fill", true),
-        ("Mega Pack", 5000, "$7.99", "crown.fill", false)
+    private let pointPacks: [(name: String, points: Int, price: String, icon: String, color: Color, highlight: Bool)] = [
+        ("Starter Pack", 500, "$0.99", "shippingbox.fill", IconPalette.blue, false),
+        ("Value Pack", 1500, "$2.99", "gift.fill", IconPalette.pink, true),
+        ("Mega Pack", 5000, "$7.99", "crown.fill", IconPalette.gold, false)
     ]
 
     var body: some View {
@@ -1170,14 +1185,10 @@ private struct StoreView: View {
                 ForEach(pointPacks, id: \.name) { pack in
                     Button(action: { buyPointPack(pack) }) {
                         HStack(spacing: 14) {
-                            ZStack {
-                                Circle()
-                                    .fill(gold.opacity(0.15))
-                                    .frame(width: 40, height: 40)
-                                Image(systemName: pack.icon)
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundColor(gold)
-                            }
+                            Image(systemName: pack.icon)
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(pack.color)
+                                .frame(width: 40, height: 40)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(pack.name)
@@ -1228,9 +1239,9 @@ private struct StoreView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.black.opacity(0.45))
             VStack(alignment: .leading, spacing: 12) {
-                earnRow(icon: "sparkles", text: "Eat collectibles — more Points for rarer finds")
-                earnRow(icon: "checkmark.seal.fill", text: "Complete a form — +30 Points")
-                earnRow(icon: "arrow.up.circle.fill", text: "Level up — +15 Points")
+                earnRow(icon: "sparkles", color: IconPalette.purple, text: "Eat collectibles — more Points for rarer finds")
+                earnRow(icon: "checkmark.seal.fill", color: IconPalette.green, text: "Complete a form — +30 Points")
+                earnRow(icon: "arrow.up.circle.fill", color: IconPalette.blue, text: "Level up — +15 Points")
             }
             .padding(16)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
@@ -1238,12 +1249,12 @@ private struct StoreView: View {
         }
     }
 
-    private func earnRow(icon: String, text: String) -> some View {
+    private func earnRow(icon: String, color: Color, text: String) -> some View {
         HStack(spacing: 10) {
-            ZStack {
-                Circle().fill(gold.opacity(0.15)).frame(width: 26, height: 26)
-                Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundColor(gold)
-            }
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(color)
+                .frame(width: 26, height: 26)
             Text(text).font(.system(size: 13)).foregroundColor(.black.opacity(0.7))
         }
     }
