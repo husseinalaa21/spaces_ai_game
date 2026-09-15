@@ -556,7 +556,7 @@ private struct CosmeticPurchaseSheet: View {
             .padding(.horizontal, 24)
 
             Button(action: onGetPremium) {
-                Text("Or unlock everything with AI+")
+                Text("Or unlock everything with Premium")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.secondary)
             }
@@ -625,7 +625,7 @@ private struct CosmeticBrowseSheet: View {
                     .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
 
                     Button(action: onGetPremium) {
-                        Text("Unlock everything with AI+")
+                        Text("Unlock everything with Premium")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.secondary)
                     }
@@ -780,7 +780,7 @@ private struct PremiumUnlockSheet: View {
                 .frame(width: 36, height: 4)
                 .padding(.top, 10)
 
-            Text("AI+ Premium")
+            Text("Premium")
                 .font(.system(size: 22, weight: .bold, design: .rounded))
 
             Text("Unlocks extra Universe looks and Gold/Diamond/Galaxy dot styles — cosmetic only, never a gameplay advantage (§74).")
@@ -796,7 +796,7 @@ private struct PremiumUnlockSheet: View {
                 .padding(.horizontal, 32)
 
             Button(action: onUnlock) {
-                Text("Preview AI+ (Test Mode)")
+                Text("Preview Premium (Test Mode)")
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .frame(width: 240, height: 48)
@@ -994,7 +994,7 @@ private struct StoreView: View {
             }
             Spacer()
             if player.profile.isPremium {
-                Label("AI+ Active", systemImage: "checkmark.seal.fill")
+                Label("Premium Active", systemImage: "checkmark.seal.fill")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .padding(.horizontal, 12).padding(.vertical, 8)
@@ -1009,24 +1009,24 @@ private struct StoreView: View {
 
     private var membershipSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("AI+ MEMBERSHIP")
+            Text("PREMIUM MEMBERSHIP")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.black.opacity(0.45))
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("AI+ Premium").font(.system(size: 18, weight: .bold, design: .rounded))
+                Text("Premium").font(.system(size: 18, weight: .bold, design: .rounded))
                 Text("Unlocks every Universe look and every Dot Style (Gold, Diamond, Galaxy) — cosmetic only, never a gameplay advantage (§74).")
                     .font(.system(size: 13))
                     .foregroundColor(.black.opacity(0.6))
 
                 if player.profile.isPremium {
-                    Label("You already have AI+ Premium.", systemImage: "checkmark.seal.fill")
+                    Label("You already have Premium.", systemImage: "checkmark.seal.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.green)
                 } else {
                     Button(action: unlockPremium) {
                         HStack {
-                            Text("Subscribe — $4.99/mo (Test Mode)")
+                            Text("Subscribe — $9.99/mo (Test Mode)")
                             Spacer()
                         }
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
