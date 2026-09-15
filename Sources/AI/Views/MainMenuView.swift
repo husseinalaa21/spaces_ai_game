@@ -438,76 +438,172 @@ private struct UniverseSwatch: View {
     private var palette: WorldBackground.Palette { WorldBackground.palette(for: theme) }
     private var size: CGFloat { isSelected ? 64 : 50 }
 
+    /// The two showiest universes get a ring — it's the single strongest cue
+    /// that these are planets and not just coloured circles, so it's spent on
+    /// the ones worth drawing attention to rather than on all nine.
+    private var hasRing: Bool { theme == .cosmic || theme == .aurora }
+
+    /// Surface colour. `.white`'s own swatch is pure white, which would
+    /// vanish against the menu, so it borrows its grid line colour instead.
+    private var surface: Color {
+        theme == .white ? Color(red: 0.86, green: 0.88, blue: 0.92) : theme.swatchColor
+    }
+
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(palette.background)
-
-            // Miniature grid, echoing the real in-game background at a
-            // much smaller scale.
             Canvas { context, canvasSize in
-                let step: CGFloat = canvasSize.width / 3
-                var x: CGFloat = step
-                while x < canvasSize.width {
-                    var path = Path()
-                    path.move(to: CGPoint(x: x, y: 0))
-                    path.addLine(to: CGPoint(x: x, y: canvasSize.height))
-                    context.stroke(path, with: .color(palette.line), lineWidth: 1)
-                    x += step
-                }
-                var y: CGFloat = step
-                while y < canvasSize.height {
-                    var path = Path()
-                    path.move(to: CGPoint(x: 0, y: y))
-                    path.addLine(to: CGPoint(x: canvasSize.width, y: y))
-                    context.stroke(path, with: .color(palette.line), lineWidth: 1)
-                    y += step
-                }
+                draw(context, canvasSize: canvasSize)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            // A couple of tiny "icon" dots standing in for rival dots
-            // floating in that universe, fixed per-theme so the tile
-            // doesn't visually jitter between renders.
-            GeometryReader { geo in
-                let w = geo.size.width
-                let h = geo.size.height
-                Circle()
-                    .fill(palette.line.opacity(0.9))
-                    .frame(width: w * 0.16, height: w * 0.16)
-                    .position(x: w * 0.28, y: h * 0.32)
-                Circle()
-                    .fill(palette.line.opacity(0.7))
-                    .frame(width: w * 0.11, height: w * 0.11)
-                    .position(x: w * 0.7, y: h * 0.68)
-                Circle()
-                    .fill(theme.swatchColor.opacity(0.55))
-                    .frame(width: w * 0.13, height: w * 0.13)
-                    .position(x: w * 0.68, y: h * 0.3)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .frame(width: size, height: size)
 
             if locked {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.black.opacity(0.4))
+                Circle().fill(Color.black.opacity(0.45))
                 Image(systemName: "lock.fill")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.white)
             } else if isSelected {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                Circle()
                     .stroke(Color.white, lineWidth: 2.5)
-                    .shadow(color: .black.opacity(0.25), radius: 3)
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 14))
                     .foregroundColor(.white)
-                    .shadow(color: .black.opacity(0.4), radius: 2)
-                    .offset(x: size / 2 - 10, y: -(size / 2) + 10)
+                    .offset(x: size / 2 - 8, y: -(size / 2) + 8)
             }
         }
         .frame(width: size, height: size)
-        .shadow(color: .black.opacity(0.18), radius: isSelected ? 6 : 3, y: 2)
         .scaleEffect(isSelected ? 1.0 : 0.92)
         .opacity(isSelected ? 1.0 : 0.75)
+    }
+
+    /// Draws the planet: ring behind, globe, surface bands, day/night
+    /// terminator, specular highlight, then the front arc of the ring.
+    ///
+    /// Everything is proportional to the canvas, so the same code serves the
+    /// 50pt unselected swatch and the 64pt selected one.
+    private func draw(_ context: GraphicsContext, canvasSize: CGSize) {
+        let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+        // Leaves room for the ring and the atmosphere glow to sit inside the
+        // frame instead of being clipped by it.
+        let radius = min(canvasSize.width, canvasSize.height) * 0.38
+        let globe = Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius,
+                                            width: radius * 2, height: radius * 2))
+
+        // Light comes from the top-right, the same direction the dots and the
+        // app icon use.
+        let lightOffset = CGPoint(x: center.x + radius * 0.42, y: center.y - radius * 0.42)
+
+        let ringPath: Path? = hasRing ? ringEllipse(center: center, radius: radius) : nil
+
+        // --- ring, back half (the globe is drawn over it next) -------------
+        if let ringPath {
+            var back = context
+            back.opacity = 0.55
+            back.stroke(ringPath, with: .color(surface.mix(with: .white, amount: 0.45)),
+                        lineWidth: max(1, radius * 0.11))
+        }
+
+        // --- atmosphere -----------------------------------------------------
+        var glow = context
+        glow.opacity = 0.35
+        glow.addFilter(.blur(radius: radius * 0.22))
+        glow.fill(
+            Path(ellipseIn: CGRect(x: center.x - radius * 1.12, y: center.y - radius * 1.12,
+                                    width: radius * 2.24, height: radius * 2.24)),
+            with: .color(surface)
+        )
+
+        // --- globe ----------------------------------------------------------
+        context.fill(
+            globe,
+            with: .radialGradient(
+                Gradient(colors: [
+                    surface.mix(with: .white, amount: 0.55),
+                    surface,
+                    surface.mix(with: .black, amount: 0.42)
+                ]),
+                center: lightOffset,
+                startRadius: 0,
+                endRadius: radius * 1.9
+            )
+        )
+
+        // --- surface bands ---------------------------------------------------
+        // Flattened arcs across the globe read as latitude lines on a sphere.
+        // Offsets are fixed per theme, so a swatch never jitters between
+        // renders the way anything random would.
+        var surfaceContext = context
+        surfaceContext.clip(to: globe)
+        // Derived from the theme's position in the catalog, NOT from
+        // hashValue: String hashing is randomly seeded per process in Swift,
+        // so that would give each universe a different surface on every
+        // launch.
+        let index = UniverseTheme.allCases.firstIndex(of: theme) ?? 0
+        let seed = Double(index % 7) / 7.0
+        for i in 0..<3 {
+            let t = (Double(i) + 0.5) / 3.0
+            let y = center.y + CGFloat((t - 0.5 + (seed - 0.5) * 0.25) * 1.7) * radius
+            let halfWidth = radius * CGFloat(0.95 - abs(t - 0.5) * 0.7)
+            let height = radius * CGFloat(0.20 + seed * 0.12)
+            surfaceContext.opacity = 0.16
+            surfaceContext.fill(
+                Path(ellipseIn: CGRect(x: center.x - halfWidth, y: y - height / 2,
+                                        width: halfWidth * 2, height: height)),
+                with: .color(i % 2 == 0 ? Color.white : palette.line)
+            )
+        }
+
+        // --- night side -------------------------------------------------------
+        // A soft crescent opposite the light, which is what actually makes a
+        // flat circle read as a sphere.
+        var night = context
+        night.clip(to: globe)
+        night.opacity = 0.34
+        night.addFilter(.blur(radius: radius * 0.3))
+        night.fill(
+            Path(ellipseIn: CGRect(x: center.x - radius * 1.75, y: center.y - radius * 0.65,
+                                    width: radius * 2.2, height: radius * 2.2)),
+            with: .color(.black)
+        )
+
+        // --- specular highlight ------------------------------------------------
+        var shine = context
+        shine.clip(to: globe)
+        shine.opacity = 0.5
+        shine.addFilter(.blur(radius: radius * 0.16))
+        let shineRadius = radius * 0.34
+        shine.fill(
+            Path(ellipseIn: CGRect(x: lightOffset.x - shineRadius, y: lightOffset.y - shineRadius,
+                                    width: shineRadius * 2, height: shineRadius * 2)),
+            with: .color(.white)
+        )
+
+        // --- limb --------------------------------------------------------------
+        context.stroke(globe, with: .color(surface.mix(with: .black, amount: 0.35).opacity(0.35)),
+                       lineWidth: max(0.5, radius * 0.05))
+
+        // --- ring, front half ----------------------------------------------------
+        // Clipped to below the ring's centre line so it crosses in front of
+        // the globe, which is what sells the ring as encircling it.
+        if let ringPath {
+            var front = context
+            front.clip(to: Path(CGRect(x: 0, y: center.y, width: canvasSize.width,
+                                        height: canvasSize.height - center.y)))
+            front.opacity = 0.9
+            front.stroke(ringPath, with: .color(surface.mix(with: .white, amount: 0.55)),
+                         lineWidth: max(1, radius * 0.11))
+        }
+    }
+
+    /// The ring, tilted so it reads as a disc seen at an angle rather than a
+    /// flat halo drawn around the globe.
+    private func ringEllipse(center: CGPoint, radius: CGFloat) -> Path {
+        let rect = CGRect(x: center.x - radius * 1.5, y: center.y - radius * 0.42,
+                           width: radius * 3.0, height: radius * 0.84)
+        return Path(ellipseIn: rect).applying(
+            CGAffineTransform(translationX: -center.x, y: -center.y)
+                .concatenating(CGAffineTransform(rotationAngle: -0.28))
+                .concatenating(CGAffineTransform(translationX: center.x, y: center.y))
+        )
     }
 }
 
