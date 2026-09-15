@@ -1427,7 +1427,7 @@ private struct StoreView: View {
         HapticsManager.shared.success()
     }
 
-    private func buyPointPack(_ pack: (name: String, points: Int, price: String, icon: String, highlight: Bool)) {
+    private func buyPointPack(_ pack: (name: String, points: Int, price: String, icon: String, color: Color, highlight: Bool)) {
         player.profile.points += pack.points
         save()
         HapticsManager.shared.impact(.light)
