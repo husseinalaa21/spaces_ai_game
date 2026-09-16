@@ -7,24 +7,27 @@ import Foundation
 /// Settings page and the About sheet, and App Store Connect needs the exact
 /// same string in App Information. One constant means one thing to change.
 ///
-/// ## Moving to a custom domain
+/// ## Where these are served
 ///
-/// `base` is the only line to edit. Point it at `https://spaces.spacechat.app`
-/// (or any host you own), add a matching `CNAME` file to `docs/`, and set the
-/// DNS record — every link below follows automatically, and no view changes.
+/// The Spacechat server itself, from its `spaces/` directory — see the
+/// `/spaces` routes in `server.js`. That keeps every address the game shows
+/// on spacechat.app rather than on a separate host.
+///
+/// `base` is the only line that names a host. Nothing below, and no view,
+/// refers to one.
 enum SpacesLinks {
 
-    /// Where the site is served from. GitHub Pages publishes `docs/` on the
-    /// default branch at exactly this path.
-    static let base = URL(string: "https://husseinalaa21.github.io/spaces_ai_game")!
+    static let base = URL(string: "https://www.spacechat.app/spaces")!
 
-    static var home: URL { base.appendingPathComponent("index.html") }
-    static var pricing: URL { base.appendingPathComponent("pricing.html") }
-    static var membership: URL { base.appendingPathComponent("membership.html") }
-    static var blog: URL { base.appendingPathComponent("blog.html") }
-    static var privacy: URL { base.appendingPathComponent("privacy.html") }
-    static var terms: URL { base.appendingPathComponent("terms.html") }
-    static var support: URL { base.appendingPathComponent("support.html") }
+    /// Extensionless on purpose: the server maps a bare page name to its
+    /// `.html` file, so these read as addresses rather than as files.
+    static var home: URL { base }
+    static var pricing: URL { base.appendingPathComponent("pricing") }
+    static var membership: URL { base.appendingPathComponent("membership") }
+    static var blog: URL { base.appendingPathComponent("blog") }
+    static var privacy: URL { base.appendingPathComponent("privacy") }
+    static var terms: URL { base.appendingPathComponent("terms") }
+    static var support: URL { base.appendingPathComponent("support") }
 
     /// Spacechat itself — the account system behind the game.
     static let spacechat = URL(string: "https://www.spacechat.app")!
