@@ -1,6 +1,6 @@
 name: AI
 options:
-  bundleIdPrefix: com.spacechat.ai
+  bundleIdPrefix: com.husseinalaa.ai
   deploymentTarget:
     iOS: "16.0"
   developmentLanguage: en
@@ -47,7 +47,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.spacechat.ai
+        PRODUCT_BUNDLE_IDENTIFIER: com.husseinalaa.ai
         DEVELOPMENT_TEAM: SVDD93966K
         PRODUCT_NAME: "Spaces - Dots Game"
         CODE_SIGN_STYLE: Automatic
