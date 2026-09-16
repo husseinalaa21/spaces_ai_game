@@ -321,6 +321,35 @@ enum DotRenderer {
             }
         }
 
+        // Material details stay inside the actual body, so shop previews and
+        // equipped dots share the same finish without hiding the face.
+        if customDot == nil {
+            var material = bodyContext
+            material.clip(to: bodyPath)
+            let gems: [DotStyle] = [.diamond, .ruby, .emerald, .sapphire, .crystal, .amethyst, .jade]
+            let metals: [DotStyle] = [.gold, .silver, .roseGold, .platinum, .chrome]
+            if gems.contains(dotStyle) {
+                for index in 0..<7 {
+                    let theta = Double(index) * .pi * 2 / 7
+                    let next = theta + .pi * 2 / 7
+                    var facet = Path()
+                    facet.move(to: CGPoint(x: radius * 0.12, y: radius * 0.22))
+                    facet.addLine(to: CGPoint(x: cos(theta) * radius * 1.1, y: sin(theta) * radius * 1.1))
+                    facet.addLine(to: CGPoint(x: cos(next) * radius * 1.1, y: sin(next) * radius * 1.1))
+                    facet.closeSubpath()
+                    material.fill(facet, with: .color(index.isMultiple(of: 2) ? .white.opacity(0.17) : .black.opacity(0.07)))
+                }
+            } else if metals.contains(dotStyle) {
+                for index in 0..<4 {
+                    let y = radius * (0.15 + CGFloat(index) * 0.16)
+                    var band = Path()
+                    band.move(to: CGPoint(x: -radius, y: y))
+                    band.addQuadCurve(to: CGPoint(x: radius, y: y - radius * 0.35), control: CGPoint(x: 0, y: y + radius * 0.22))
+                    material.stroke(band, with: .color(.white.opacity(index == 1 ? 0.24 : 0.09)), lineWidth: radius * 0.045)
+                }
+            }
+        }
+
         // Eyes now live INSIDE the body's own rotated + stretched local frame
         // (`bodyContext`), anchored to one fixed spot near the front/top —
         // instead of a separate overlay redrawn upright in world space every

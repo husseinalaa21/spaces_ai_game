@@ -9,6 +9,13 @@ import SwiftUI
 /// so each turn sends only the new message.
 struct SpacechatAIView: View {
     @ObservedObject var authState: AuthState
+    @ObservedObject var player: PlayerState
+    var save: () -> Void
+    @State private var mode = "Chat"
+    @State private var showSignIn = false
+    @State private var generatedDot: NamedCustomDot?
+    @State private var generatedUniverse: CustomUniverse?
+    @State private var savedDesignID: UUID?
 
     private struct Turn: Identifiable, Equatable {
         let id = UUID()
@@ -31,6 +38,11 @@ struct SpacechatAIView: View {
             if authState.spacechatUsername == nil {
                 signedOutNotice
             } else {
+                Picker("Spacechat AI mode", selection: $mode) {
+                    Text("Chat").tag("Chat")
+                    Text("Create dot").tag("Dot")
+                    Text("Create universe").tag("Universe")
+                }.pickerStyle(.segmented).padding(.horizontal, 16).padding(.bottom, 12).disabled(isThinking)
                 conversation
                 composer
             }
@@ -38,7 +50,13 @@ struct SpacechatAIView: View {
         // Fills the display end to end; the composer below keeps its own
         // clearance from the home indicator.
         .background(Color.white)
-        .ignoresSafeArea()
+        .preferredColorScheme(.light)
+        .sheet(isPresented: $showSignIn) {
+            SpacechatPhraseView(authState: authState) { showSignIn = false }
+        }
+        .onChange(of: authState.spacechatUsername) { _ in
+            turns = []; draft = ""; generatedDot = nil; generatedUniverse = nil
+        }
     }
 
     private var signedOutNotice: some View {
@@ -52,6 +70,9 @@ struct SpacechatAIView: View {
                 .foregroundColor(.black.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
+            Button("Sign in with Spacechat") { showSignIn = true }
+                .font(.subheadline.weight(.semibold)).padding(15)
+                .background(Color(white: 0.94), in: Capsule())
             Spacer()
         }
     }
@@ -67,6 +88,8 @@ struct SpacechatAIView: View {
                         bubble(turn)
                             .id(turn.id)
                     }
+                    if generatedDot != nil || generatedUniverse != nil { designPreview }
+                    if !player.profile.customDotLibrary.isEmpty || !player.profile.customUniverses.isEmpty { creationsLibrary }
                     if isThinking {
                         typingIndicator.id("thinking")
                     }
@@ -102,7 +125,7 @@ struct SpacechatAIView: View {
                 Text("Spacechat AI")
                     .font(.system(size: 17, weight: .bold, design: .rounded))
             }
-            Text("Ask anything — about Spacechat, about this game, or about nothing in particular.")
+            Text(mode == "Chat" ? "Chat with Spacechat AI, or create a dot and a universe of your own." : "Describe your \(mode.lowercased()). Try icy blue with silver stars, or a sunset world with a warm golden grid.")
                 .font(.system(size: 13))
                 .foregroundColor(.black.opacity(0.5))
         }
@@ -136,7 +159,7 @@ struct SpacechatAIView: View {
 
     private var composer: some View {
         HStack(spacing: 10) {
-            TextField("Message Spacechat AI", text: $draft, axis: .vertical)
+            TextField(mode == "Chat" ? "Message Spacechat AI" : "Describe your \(mode.lowercased())…", text: $draft, axis: .vertical)
                 .lineLimit(1...4)
                 .font(.system(size: 15))
                 .padding(.horizontal, 14).padding(.vertical, 10)
@@ -166,20 +189,103 @@ struct SpacechatAIView: View {
 
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard canSend else { return }
         draft = ""
         errorMessage = nil
         turns.append(Turn(text: text, fromAI: false))
         isThinking = true
+        let account = authState.spacechatUsername
+        let requestedMode = mode
         Task {
+            defer { isThinking = false }
             do {
-                let reply = try await SpacechatService.askSpacechatAI(text)
-                turns.append(Turn(text: reply, fromAI: true))
+                let prompt = requestedMode == "Chat" ? text : creationPrompt(text, mode: requestedMode)
+                let reply = try await SpacechatService.askSpacechatAI(prompt)
+                guard account == authState.spacechatUsername else { return }
+                if requestedMode == "Chat" { turns.append(Turn(text: reply, fromAI: true)) }
+                else {
+                    let design = try SpacesGeneratedDesign.parse(reply)
+                    if requestedMode == "Dot" { generatedDot = try design.dot(); generatedUniverse = nil }
+                    else { generatedUniverse = try design.universe(); generatedDot = nil }
+                    savedDesignID = nil
+                    turns.append(Turn(text: "Your design is ready. Preview it below, then save and equip it when you're happy with it.", fromAI: true))
+                }
             } catch {
+                guard account == authState.spacechatUsername else { return }
+                draft = text
                 errorMessage = (error as? LocalizedError)?.errorDescription
                     ?? "Spacechat AI is unavailable right now."
             }
             isThinking = false
         }
+    }
+}
+
+extension SpacechatAIView {
+    private func creationPrompt(_ text: String, mode: String) -> String {
+        let schema = mode == "Dot"
+            ? "{\"name\":\"Short name\",\"base\":[0.2,0.5,0.9],\"stickers\":[{\"symbol\":\"star.fill\",\"x\":-0.4,\"y\":0.4,\"scale\":0.35,\"color\":[1,1,1]}]}"
+            : "{\"name\":\"Short name\",\"background\":[0.1,0.15,0.3],\"grid\":[0.5,0.7,0.9],\"stars\":true}"
+        return """
+        Design a cosmetic \(mode.lowercased()) for Spaces, the dot game. Return ONLY valid JSON matching this example: \(schema)
+        Colors are three finite RGB numbers from 0 to 1. Name must be 1–60 characters.
+        For dots use 1–8 stickers, positions -0.65 to 0.65, scale 0.12 to 0.65. Place decorations away from the upper-center eyes.
+        Allowed symbols: \(DotSticker.catalog.joined(separator: ", ")).
+        Universes change background, grid color and starfield only; do not promise new game mechanics.
+        User's design description: \(text)
+        """
+    }
+
+    private var designPreview: some View {
+        VStack(spacing: 14) {
+            if let dot = generatedDot {
+                Canvas { context, size in
+                    DotRenderer.drawPlayer(context, center: CGPoint(x: size.width / 2, y: size.height / 2), radius: 48,
+                                           color: dot.artwork.baseColor.color, stretch: 0, angle: .zero, lookDirection: .zero,
+                                           time: 0, reduceMotion: true, customDot: dot.artwork)
+                }.frame(height: 160)
+                Text(dot.name).font(.headline)
+            }
+            if let universe = generatedUniverse {
+                Canvas { context, size in
+                    WorldBackground.draw(context, screenSize: size, cameraOffset: .zero, palette: universe.palette, reduceMotion: true)
+                }.frame(height: 180).clipShape(RoundedRectangle(cornerRadius: 18))
+                Text(universe.name).font(.headline)
+            }
+            Button(savedDesignID == nil ? "Save & equip" : "Saved and equipped") {
+                if let dot = generatedDot {
+                    if !player.profile.customDotLibrary.contains(where: { $0.id == dot.id }) { player.profile.customDotLibrary.append(dot) }
+                    player.profile.customDot = dot.artwork; player.profile.usesCustomDot = true; savedDesignID = dot.id
+                }
+                if let universe = generatedUniverse {
+                    if !player.profile.customUniverses.contains(where: { $0.id == universe.id }) { player.profile.customUniverses.append(universe) }
+                    player.profile.selectedCustomUniverseID = universe.id; savedDesignID = universe.id
+                }
+                save()
+            }.font(.subheadline.weight(.semibold)).padding(14).frame(maxWidth: .infinity)
+                .foregroundColor(.white).background(Color.black, in: Capsule()).disabled(savedDesignID != nil)
+        }.padding(18).background(Color(white: 0.97), in: RoundedRectangle(cornerRadius: 22))
+    }
+
+    private var creationsLibrary: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Your creations").font(.headline)
+            ForEach(player.profile.customDotLibrary) { dot in
+                HStack {
+                    Circle().fill(dot.artwork.baseColor.color).frame(width: 24, height: 24)
+                    Text(dot.name).font(.subheadline)
+                    Spacer()
+                    Button("Equip dot") { player.profile.customDot = dot.artwork; player.profile.usesCustomDot = true; save() }.font(.caption.weight(.semibold))
+                }
+            }
+            ForEach(player.profile.customUniverses) { universe in
+                HStack {
+                    Circle().fill(universe.background.color).frame(width: 24, height: 24)
+                    Text(universe.name).font(.subheadline)
+                    Spacer()
+                    Button("Equip universe") { player.profile.selectedCustomUniverseID = universe.id; save() }.font(.caption.weight(.semibold))
+                }
+            }
+        }.padding(.vertical, 16)
     }
 }

@@ -20,6 +20,8 @@ struct GameHubView: View {
     /// the same StoreManager — two instances would mean two product loads and
     /// two transaction listeners racing each other.
     @StateObject private var store = StoreManager()
+    @StateObject private var inbox = SpacesInbox()
+    @Environment(\.scenePhase) private var scenePhase
 
     enum Tab: Int, CaseIterable, Identifiable {
         case home = 0
@@ -64,9 +66,9 @@ struct GameHubView: View {
                     MainMenuView(player: player, authState: authState, sync: sync,
                                  store: store, save: save, onPlay: onPlay)
                 case .spacechatAI:
-                    SpacechatAIView(authState: authState)
+                    SpacechatAIView(authState: authState, player: player, save: save)
                 case .messages:
-                    MessagesView(authState: authState)
+                    MessagesView(authState: authState, inbox: inbox)
                 case .settings:
                     SettingsPageView(player: player, authState: authState,
                                      sync: sync, store: store, save: save)
@@ -92,7 +94,21 @@ struct GameHubView: View {
         // page back off those edges. The window clips the slide anyway.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.white)
-        .ignoresSafeArea()
+        .ignoresSafeArea(.container)
+        .onChange(of: scenePhase) { _ in inbox.persist() }
+        .onChange(of: inbox.incomingAlertID) { _ in HapticsManager.shared.impact(.light) }
+        .task(id: authState.spacechatUsername) {
+            inbox.configure(username: authState.spacechatUsername)
+            if authState.spacechatUsername != nil { await inbox.refresh() }
+        }
+        .task(id: "\(authState.spacechatUsername ?? "")-\(scenePhase == .active)") {
+            guard authState.spacechatUsername != nil, scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await inbox.poll()
+                do { try await Task.sleep(nanoseconds: 3_000_000_000) } catch { break }
+            }
+        }
+
     }
 
     // MARK: - Banner

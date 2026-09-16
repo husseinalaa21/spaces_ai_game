@@ -91,6 +91,9 @@ struct RootView: View {
             let inWhiteSpace = phase == .practiceRound || phase == .finalRound
             AudioManager.shared.setMusicEnabled(v, wantsMusic: inWhiteSpace ? "ambient" : nil)
         }
+        .onChange(of: authState.spacechatUsername) { _ in
+            adoptSpacechatAccountIfAny()
+        }
         .onChange(of: authState.isSignedIn) { signedIn in
             // Handles the rare case where Apple reports the credential was
             // revoked after we'd already let the player into the game.

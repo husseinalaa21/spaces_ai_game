@@ -168,7 +168,10 @@ struct WhiteSpaceView: View {
     /// practice room (and this same view when reused elsewhere) still shows
     /// the player's own pick.
     private var currentPalette: WorldBackground.Palette {
-        engine.roundMode == .final ? WorldBackground.finalUniverse : WorldBackground.palette(for: player.profile.selectedUniverse)
+        if let custom = player.profile.customUniverses.first(where: { $0.id == player.profile.selectedCustomUniverseID }) {
+            return custom.palette
+        }
+        return engine.roundMode == .final ? WorldBackground.finalUniverse : WorldBackground.palette(for: player.profile.selectedUniverse)
     }
 
     // MARK: - Drawing

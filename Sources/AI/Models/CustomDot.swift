@@ -96,3 +96,72 @@ struct CustomDot: Codable, Equatable {
     /// this is a hard ceiling rather than a normal case.
     static let maxPointsPerStroke = 240
 }
+
+struct NamedCustomDot: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var name: String
+    var artwork: CustomDot
+}
+
+struct CustomUniverse: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var name: String
+    var background: PaintColor
+    var grid: PaintColor
+    var stars: Bool
+    var palette: WorldBackground.Palette {
+        WorldBackground.Palette(background: background.color, line: grid.color, isCosmic: stars)
+    }
+}
+
+/// AI output is data, never executable code. Bound geometry and allowlisted
+/// symbols keep generated artwork within the same limits as Dot Studio.
+struct SpacesGeneratedDesign: Decodable {
+    var name: String
+    var base: [Double]?
+    var stickers: [Sticker]?
+    var background: [Double]?
+    var grid: [Double]?
+    var stars: Bool?
+    struct Sticker: Decodable {
+        var symbol: String
+        var x: Double
+        var y: Double
+        var scale: Double
+        var color: [Double]
+    }
+    static func parse(_ response: String) throws -> SpacesGeneratedDesign {
+        guard let start = response.firstIndex(of: "{"), let end = response.lastIndex(of: "}"), start <= end else {
+            throw SpacechatService.ServiceError.unavailable("The AI didn't return a usable design. Try a more specific description.")
+        }
+        let data = Data(response[start...end].utf8)
+        let design = try JSONDecoder().decode(Self.self, from: data)
+        guard !design.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, design.name.count <= 60 else {
+            throw SpacechatService.ServiceError.unavailable("The AI returned an invalid design name. Please try again.")
+        }
+        return design
+    }
+    private func color(_ components: [Double]?) throws -> PaintColor {
+        guard let components, components.count == 3, components.allSatisfy({ $0.isFinite && (0...1).contains($0) }) else {
+            throw SpacechatService.ServiceError.unavailable("The AI returned invalid colors. Please try again.")
+        }
+        return PaintColor(r: components[0], g: components[1], b: components[2])
+    }
+    func dot() throws -> NamedCustomDot {
+        var artwork = CustomDot(baseColor: try color(base))
+        for item in (stickers ?? []).prefix(CustomDot.maxStickers) {
+            guard DotSticker.catalog.contains(item.symbol), item.x.isFinite, item.y.isFinite, item.scale.isFinite else {
+                throw SpacechatService.ServiceError.unavailable("The AI chose unsupported artwork. Please try again.")
+            }
+            artwork.stickers.append(DotSticker(symbol: item.symbol, position: CGPoint(x: max(-0.65, min(0.65, item.x)), y: max(-0.65, min(0.65, item.y))), scale: max(0.12, min(0.65, item.scale)), color: try color(item.color)))
+        }
+        // A base-color-only design is still equipable in the existing studio.
+        if artwork.stickers.isEmpty {
+            artwork.stickers = [DotSticker(symbol: "sparkles", position: CGPoint(x: -0.35, y: 0.3), scale: 0.3, color: PaintColor(r: 1, g: 1, b: 1))]
+        }
+        return NamedCustomDot(name: name, artwork: artwork)
+    }
+    func universe() throws -> CustomUniverse {
+        CustomUniverse(name: name, background: try color(background), grid: try color(grid), stars: stars ?? false)
+    }
+}

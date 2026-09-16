@@ -43,12 +43,15 @@ struct MainMenuView: View {
     @ObservedObject var player: PlayerState
     @ObservedObject var authState: AuthState
     @ObservedObject var sync: SpacechatSync
-    var save: () -> Void = {}
-    let onPlay: () -> Void
-
     /// Owned by `GameHubView` and shared with Settings, so there is exactly
     /// one product load and one transaction listener for the whole session.
+    ///
+    /// Declared here, before the closures: a struct's memberwise initializer
+    /// follows declaration order, so moving this below `onPlay` silently
+    /// changes the call site's argument labels.
     @ObservedObject var store: StoreManager
+    var save: () -> Void = {}
+    let onPlay: () -> Void
 
     @State private var showDotStudio = false
     @State private var showPremiumSheet = false
@@ -75,7 +78,9 @@ struct MainMenuView: View {
                            center: .center, startRadius: 40, endRadius: 420)
                 .ignoresSafeArea()
 
-            VStack(spacing: 22) {
+            GeometryReader { geometry in
+                ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 18) {
                 Spacer()
 
                 // No more "Spaces" wordmark above the preview (§ user
@@ -112,12 +117,12 @@ struct MainMenuView: View {
                         dotStyle: player.profile.selectedDotStyle,
                         customDot: player.activeCustomDot,
                         isUnlocked: { player.profile.owns($0) },
-                        onSelectStyle: { player.profile.selectedDotStyle = $0; save() },
+                        onSelectStyle: { player.profile.selectedDotStyle = $0; player.profile.usesCustomDot = false; save() },
                         onLockedTap: { purchaseTarget = .dotStyle($0) }
                     )
                 }
 
-                Text(player.profile.selectedDotStyle.displayName)
+                Text(player.profile.usesCustomDot ? "Custom Dot" : player.profile.selectedDotStyle.displayName)
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .foregroundColor(.black.opacity(0.4))
 
@@ -134,14 +139,23 @@ struct MainMenuView: View {
                         options: Array(UniverseTheme.allCases),
                         selection: Binding(
                             get: { player.profile.selectedUniverse },
-                            set: { player.profile.selectedUniverse = $0; save() }
+                            set: { player.profile.selectedUniverse = $0; player.profile.selectedCustomUniverseID = nil; save() }
                         ),
                         isUnlocked: { player.profile.owns($0) },
                         onLockedTap: { purchaseTarget = .universe($0) }
                     )
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 8)
 
+                if let custom = player.profile.customUniverses.first(where: { $0.id == player.profile.selectedCustomUniverseID }) {
+                    VStack(spacing: 6) {
+                        Circle().fill(RadialGradient(colors: [custom.grid.color, custom.background.color], center: .topTrailing, startRadius: 0, endRadius: 70))
+                            .frame(width: 76, height: 76)
+                        Text("\(custom.name) · Equipped").font(.caption.weight(.medium))
+                        Button("Use catalog universe") { player.profile.selectedCustomUniverseID = nil; save() }
+                            .font(.caption).foregroundColor(.secondary)
+                    }.padding(.top, 10)
+                }
                 viewMoreButton { browseKind = .universes }
 
                 Spacer()
@@ -173,14 +187,11 @@ struct MainMenuView: View {
                 .buttonStyle(PressableButtonStyle())
                 .padding(.bottom, 40)
             }
-            // Starts below the banner rather than at the top of the display.
-            // The column's leading Spacer only distributes leftover space, so
-            // on a short screen the username row underneath it was sliding up
-            // behind the Home/AI/Messages banner.
-            .padding(.top, GameHubView.bannerTopInset + 46)
-            // And clear of the home indicator at the other end, now that the
-            // page runs underneath it.
-            .padding(.bottom, GameHubView.homeIndicatorInset)
+            .frame(maxWidth: .infinity, minHeight: max(0, geometry.size.height - GameHubView.bannerTopInset - 112 - GameHubView.homeIndicatorInset))
+                }
+                .padding(.top, GameHubView.bannerTopInset + 112)
+                .padding(.bottom, GameHubView.homeIndicatorInset)
+            }
             .opacity(hasAppeared ? 1 : 0)
             .offset(y: hasAppeared ? 0 : 12)
 
@@ -448,7 +459,7 @@ private struct UniverseSwatch: View {
     let locked: Bool
 
     private var palette: WorldBackground.Palette { WorldBackground.palette(for: theme) }
-    private var size: CGFloat { isSelected ? 64 : 50 }
+    private var size: CGFloat { isSelected ? 100 : 80 }
 
     /// The two showiest universes get a ring — it's the single strongest cue
     /// that these are planets and not just coloured circles, so it's spent on
@@ -469,22 +480,15 @@ private struct UniverseSwatch: View {
             .frame(width: size, height: size)
 
             if locked {
-                Circle().fill(Color.black.opacity(0.45))
                 Image(systemName: "lock.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white)
-            } else if isSelected {
-                Circle()
-                    .stroke(Color.white, lineWidth: 2.5)
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 14))
-                    .foregroundColor(.white)
-                    .offset(x: size / 2 - 8, y: -(size / 2) + 8)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.black.opacity(0.5))
+                    .offset(y: size * 0.44)
             }
         }
         .frame(width: size, height: size)
-        .scaleEffect(isSelected ? 1.0 : 0.92)
-        .opacity(isSelected ? 1.0 : 0.75)
+        .accessibilityLabel("\(theme.displayName)\(locked ? ", locked" : "")")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     /// Draws the planet: ring behind, globe, surface bands, day/night
@@ -496,7 +500,7 @@ private struct UniverseSwatch: View {
         let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
         // Leaves room for the ring and the atmosphere glow to sit inside the
         // frame instead of being clipped by it.
-        let radius = min(canvasSize.width, canvasSize.height) * 0.38
+        let radius = min(canvasSize.width, canvasSize.height) * (hasRing ? 0.29 : 0.34)
         let globe = Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius,
                                             width: radius * 2, height: radius * 2))
 
@@ -564,6 +568,31 @@ private struct UniverseSwatch: View {
             )
         }
 
+        surfaceContext.opacity = 0.8
+        if theme == .white || theme == .midnight {
+            for index in 0..<5 {
+                let theta = Double(index) * 2.4
+                let craterRadius = radius * CGFloat(0.09 + Double(index % 3) * 0.025)
+                let point = CGPoint(x: center.x + CGFloat(cos(theta)) * radius * 0.6,
+                                    y: center.y + CGFloat(sin(theta)) * radius * 0.6)
+                let crater = Path(ellipseIn: CGRect(x: point.x - craterRadius, y: point.y - craterRadius,
+                                                   width: craterRadius * 2, height: craterRadius * 2))
+                surfaceContext.fill(crater, with: .radialGradient(Gradient(colors: [.black.opacity(0.35), .white.opacity(0.12)]),
+                                                                center: point, startRadius: 0, endRadius: craterRadius))
+            }
+        } else if theme == .ocean || theme == .forest {
+            for index in 0..<3 {
+                let x = center.x + radius * CGFloat(index - 1) * 0.5
+                let y = center.y + radius * CGFloat(index % 2 == 0 ? -0.15 : 0.4)
+                var land = Path()
+                land.move(to: CGPoint(x: x - radius * 0.28, y: y))
+                land.addCurve(to: CGPoint(x: x + radius * 0.24, y: y + radius * 0.15),
+                              control1: CGPoint(x: x, y: y - radius * 0.55), control2: CGPoint(x: x + radius * 0.5, y: y - radius * 0.25))
+                land.addQuadCurve(to: CGPoint(x: x - radius * 0.28, y: y), control: CGPoint(x: x, y: y + radius * 0.65))
+                surfaceContext.fill(land, with: .color(Color(red: 0.2, green: 0.58, blue: 0.42).opacity(0.7)))
+            }
+        }
+
         // --- night side -------------------------------------------------------
         // A soft crescent opposite the light, which is what actually makes a
         // flat circle read as a sphere.
@@ -588,10 +617,6 @@ private struct UniverseSwatch: View {
                                     width: shineRadius * 2, height: shineRadius * 2)),
             with: .color(.white)
         )
-
-        // --- limb --------------------------------------------------------------
-        context.stroke(globe, with: .color(surface.mix(with: .black, amount: 0.35).opacity(0.35)),
-                       lineWidth: max(0.5, radius * 0.05))
 
         // --- ring, front half ----------------------------------------------------
         // Clipped to below the ring's centre line so it crosses in front of
@@ -630,20 +655,22 @@ private struct UniverseSwatch: View {
 private struct DotStylePreviewCanvas: View {
     let style: DotStyle
     var diameter: CGFloat = 46
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Canvas { context, size in
-            let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let radius = diameter * 0.28
-            DotRenderer.drawPlayer(
-                context, center: center, radius: radius,
-                color: DotStyle.classic.swatchColor,
-                stretch: 0, angle: .zero, lookDirection: .zero, time: 0,
-                eyeStyle: .whiteOnly, reduceMotion: true, eatPulse: 0,
-                dotStyle: style
-            )
+        TimelineView(.animation(minimumInterval: 1.0 / 24, paused: reduceMotion)) { timeline in
+            Canvas { context, size in
+                let time = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
+                let center = CGPoint(x: size.width / 2, y: size.height * 0.55)
+                DotRenderer.drawPlayer(
+                    context, center: center, radius: diameter * 0.28,
+                    color: style.swatchColor,
+                    stretch: 0, angle: .zero, lookDirection: CGVector(dx: 0.15, dy: -0.1), time: time,
+                    eyeStyle: .whiteOnly, reduceMotion: reduceMotion, eatPulse: 0,
+                    dotStyle: style
+                )
+            }.frame(width: diameter, height: diameter * 1.12)
         }
-        .frame(width: diameter, height: diameter)
     }
 }
 
@@ -783,15 +810,14 @@ private struct CosmeticBrowseSheet: View {
                 VStack(spacing: 20) {
                     previewHeader
 
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 12)], spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 12)], spacing: 16) {
                         switch kind {
                         case .universes: universeTiles
                         case .dotStyles: dotStyleTiles
                         }
                     }
                     .padding(16)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
-                    .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+
 
                     Button(action: onGetPremium) {
                         Text("Unlock everything with Premium")
@@ -821,10 +847,11 @@ private struct CosmeticBrowseSheet: View {
                         owned: player.profile.owns(previewUniverse),
                         equipped: player.profile.selectedUniverse == previewUniverse,
                         price: previewUniverse.price,
-                        onEquip: { player.profile.selectedUniverse = previewUniverse; save() },
+                        plain: true,
+                        onEquip: { player.profile.selectedUniverse = previewUniverse; player.profile.selectedCustomUniverseID = nil; save() },
                         onBuy: { if player.purchase(previewUniverse) { save(); HapticsManager.shared.success() } }) {
                 UniverseSwatch(theme: previewUniverse, isSelected: true, locked: false)
-                    .scaleEffect(1.3)
+                    .frame(height: 120)
             }
         case .dotStyles:
             previewCard(name: previewDotStyle.displayName,
@@ -832,9 +859,9 @@ private struct CosmeticBrowseSheet: View {
                         equipped: player.profile.selectedDotStyle == previewDotStyle,
                         price: previewDotStyle.price,
                         plain: true,
-                        onEquip: { player.profile.selectedDotStyle = previewDotStyle; save() },
+                        onEquip: { player.profile.selectedDotStyle = previewDotStyle; player.profile.usesCustomDot = false; save() },
                         onBuy: { if player.purchase(previewDotStyle) { save(); HapticsManager.shared.success() } }) {
-                DotStylePreviewCanvas(style: previewDotStyle, diameter: 88)
+                DotStylePreviewCanvas(style: previewDotStyle, diameter: 156)
             }
         }
     }
@@ -917,29 +944,28 @@ private struct CosmeticBrowseSheet: View {
     private var dotStyleTiles: some View {
         ForEach(DotStyle.allCases) { style in
             Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { previewDotStyle = style }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { previewDotStyle = style }
             } label: {
-                VStack(spacing: 4) {
-                    ZStack {
-                        DotStylePreviewCanvas(style: style, diameter: 46)
-                        if !player.profile.owns(style) {
-                            Circle().fill(Color.black.opacity(0.35)).frame(width: 46, height: 46)
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                        if style == previewDotStyle {
-                            Circle().stroke(Color.black.opacity(0.8), lineWidth: 2.5).frame(width: 50, height: 50)
-                        }
-                    }
-                    .frame(height: 52)
+                VStack(spacing: 6) {
+                    DotStylePreviewCanvas(style: style, diameter: 96)
                     Text(style.displayName)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.black.opacity(0.6))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(.black)
                         .lineLimit(1)
+                    HStack(spacing: 4) {
+                        if style == previewDotStyle { Image(systemName: "checkmark") }
+                        if player.profile.owns(style) { Text("Owned") }
+                        else { Image(systemName: "sparkle"); Text("\(style.price)") }
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.black.opacity(0.5))
                 }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("\(style.displayName), \(player.profile.owns(style) ? "owned" : "\(style.price) points")")
         }
     }
 

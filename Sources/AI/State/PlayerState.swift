@@ -33,6 +33,9 @@ struct PlayerProfile: Codable {
     /// artwork.
     var customDot: CustomDot = CustomDot()
     var usesCustomDot: Bool = false
+    var customDotLibrary: [NamedCustomDot] = []
+    var customUniverses: [CustomUniverse] = []
+    var selectedCustomUniverseID: UUID? = nil
 
     /// Individually-bought premium cosmetics (§ new — "add more to buy...
     /// set price for them"), stored by raw value so a save from before a
@@ -78,6 +81,8 @@ struct PlayerProfile: Codable {
             && progress.isEmpty
             && !hasCompletedOnboarding
             && customDot.isBlank
+            && customDotLibrary.isEmpty
+            && customUniverses.isEmpty
     }
 
     /// A "davi_32"-style handle shown under the player's own dot in the
@@ -123,6 +128,9 @@ struct PlayerProfile: Codable {
         selectedDotStyle = try c.decodeIfPresent(DotStyle.self, forKey: .selectedDotStyle) ?? .classic
         customDot = try c.decodeIfPresent(CustomDot.self, forKey: .customDot) ?? CustomDot()
         usesCustomDot = try c.decodeIfPresent(Bool.self, forKey: .usesCustomDot) ?? false
+        customDotLibrary = try c.decodeIfPresent([NamedCustomDot].self, forKey: .customDotLibrary) ?? []
+        customUniverses = try c.decodeIfPresent([CustomUniverse].self, forKey: .customUniverses) ?? []
+        selectedCustomUniverseID = try c.decodeIfPresent(UUID.self, forKey: .selectedCustomUniverseID)
         unlockedUniverses = try c.decodeIfPresent(Set<String>.self, forKey: .unlockedUniverses) ?? []
         unlockedDotStyles = try c.decodeIfPresent(Set<String>.self, forKey: .unlockedDotStyles) ?? []
         points = try c.decodeIfPresent(Int.self, forKey: .points) ?? 0
