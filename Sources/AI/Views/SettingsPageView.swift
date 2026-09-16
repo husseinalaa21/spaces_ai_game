@@ -178,17 +178,37 @@ struct SettingsPageView: View {
     // MARK: - About
 
     private var aboutSection: some View {
-        section("ABOUT") {
-            tapRow(icon: "info.circle", title: "About Spacechat",
-                   subtitle: "What Spacechat is, and how this game connects to it") {
-                showAbout = true
+        VStack(spacing: 22) {
+            section("SPACES") {
+                linkRow(icon: "tag", title: "Pricing",
+                        subtitle: "What everything costs, and what you can earn free",
+                        url: SpacesLinks.pricing)
+                linkRow(icon: "star.circle", title: "Premium",
+                        subtitle: "What the subscription includes",
+                        url: SpacesLinks.membership)
+                linkRow(icon: "newspaper", title: "Blog",
+                        subtitle: "What's changing in the game",
+                        url: SpacesLinks.blog)
+                linkRow(icon: "lifepreserver", title: "Support",
+                        subtitle: "Help with accounts, purchases and data",
+                        url: SpacesLinks.support)
             }
-            linkRow(icon: "hand.raised", title: "Privacy Policy",
-                    subtitle: "How your data is handled",
-                    url: StoreManager.privacyPolicyURL)
-            linkRow(icon: "doc.text", title: "Terms of Use",
-                    subtitle: "Apple's standard licence agreement",
-                    url: StoreManager.termsOfUseURL)
+
+            section("ABOUT") {
+                tapRow(icon: "info.circle", title: "About Spacechat",
+                       subtitle: "What Spacechat is, and how this game connects to it") {
+                    showAbout = true
+                }
+                linkRow(icon: "hand.raised", title: "Privacy Policy",
+                        subtitle: "What's stored, and what never leaves your device",
+                        url: SpacesLinks.privacy)
+                linkRow(icon: "doc.text", title: "Terms of Use",
+                        subtitle: "The terms covering Spaces",
+                        url: SpacesLinks.terms)
+                linkRow(icon: "arrow.uturn.backward.circle", title: "Request a refund",
+                        subtitle: "Refunds are handled by Apple",
+                        url: SpacesLinks.refunds)
+            }
         }
     }
 
@@ -369,7 +389,6 @@ struct SettingsPageView: View {
     }
 
     private func openAppleSubscriptions() {
-        guard let url = URL(string: "https://apps.apple.com/account/subscriptions") else { return }
-        UIApplication.shared.open(url)
+        UIApplication.shared.open(SpacesLinks.manageSubscriptions)
     }
 }

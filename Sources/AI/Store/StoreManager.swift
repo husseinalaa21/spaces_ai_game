@@ -22,14 +22,15 @@ final class StoreManager: ObservableObject {
     /// as an empty product list with no error, not as a thrown failure.
     static let premiumProductID = "spaces_vip"
 
-    /// Apple's standard EULA. App Review requires a reachable Terms of Use
-    /// link on any screen that sells a subscription (Guideline 3.1.2); using
-    /// Apple's standard agreement means there's nothing to self-host.
-    static let termsOfUseURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
-
-    /// TODO: replace with the real published policy before submitting — App
-    /// Store Connect also requires this exact URL in App Information.
-    static let privacyPolicyURL = URL(string: "https://husseinalaa21.github.io/spaces_ai_game/privacy.html")!
+    /// App Review requires reachable Terms of Use and Privacy links on any
+    /// screen that sells a subscription (Guideline 3.1.2). Both now point at
+    /// the game's own published pages; the terms page links on to Apple's
+    /// standard EULA, which governs the licence itself.
+    ///
+    /// Defined in `SpacesLinks` rather than here so the paywall, the Store,
+    /// Settings and the About sheet can never drift apart.
+    static var termsOfUseURL: URL { SpacesLinks.terms }
+    static var privacyPolicyURL: URL { SpacesLinks.privacy }
 
     /// Consumable Point Packs, keyed by Product ID exactly as registered in
     /// App Store Connect, mapped to the Points each one credits.

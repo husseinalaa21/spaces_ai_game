@@ -238,13 +238,16 @@ struct AboutSpacechatView: View {
                     Divider()
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Link(destination: URL(string: "https://www.spacechat.app")!) {
-                            Label("spacechat.app", systemImage: "globe")
+                        Link(destination: SpacesLinks.home) {
+                            Label("The Spaces site", systemImage: "globe")
                         }
-                        Link(destination: StoreManager.privacyPolicyURL) {
+                        Link(destination: SpacesLinks.spacechat) {
+                            Label("spacechat.app", systemImage: "network")
+                        }
+                        Link(destination: SpacesLinks.privacy) {
                             Label("Privacy Policy", systemImage: "hand.raised")
                         }
-                        Link(destination: StoreManager.termsOfUseURL) {
+                        Link(destination: SpacesLinks.terms) {
                             Label("Terms of Use", systemImage: "doc.text")
                         }
                     }
