@@ -1,6 +1,6 @@
 name: AI
 options:
-  bundleIdPrefix: com.husseinalaa.ai
+  bundleIdPrefix: com.spacechat.ai
   deploymentTarget:
     iOS: "16.0"
   developmentLanguage: en
