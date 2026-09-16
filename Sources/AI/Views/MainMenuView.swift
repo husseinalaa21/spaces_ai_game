@@ -53,6 +53,28 @@ struct MainMenuView: View {
     var save: () -> Void = {}
     let onPlay: () -> Void
 
+    /// Written out explicitly rather than relying on the synthesized
+    /// memberwise initializer.
+    ///
+    /// That one follows declaration order, so simply moving a stored
+    /// property changes this view's argument labels at every call site —
+    /// which is exactly how `store` landing after `onPlay` broke the build.
+    /// With this here, the parameter order is stated in source and reordering
+    /// the properties can't silently change it.
+    init(player: PlayerState,
+         authState: AuthState,
+         sync: SpacechatSync,
+         store: StoreManager,
+         save: @escaping () -> Void = {},
+         onPlay: @escaping () -> Void) {
+        self.player = player
+        self.authState = authState
+        self.sync = sync
+        self.store = store
+        self.save = save
+        self.onPlay = onPlay
+    }
+
     @State private var showDotStudio = false
     @State private var showPremiumSheet = false
     @State private var showStore = false
