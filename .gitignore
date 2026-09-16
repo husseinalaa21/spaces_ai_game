@@ -8,3 +8,6 @@ xcuserdata/
 # Local update archives and discarded drafts.
 *.tar.gz
 _to_delete/
+
+# Xcode build-log exports.
+Build*.txt

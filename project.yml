@@ -33,6 +33,7 @@ targets:
       path: Sources/AI/Info.plist
       properties:
         UILaunchScreen: {}
+        NSCameraUsageDescription: "Scan a Spacechat profile QR code to start a conversation."
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UISupportedInterfaceOrientations~ipad:
