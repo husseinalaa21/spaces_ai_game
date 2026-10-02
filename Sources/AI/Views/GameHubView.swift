@@ -21,13 +21,16 @@ struct GameHubView: View {
     /// two transaction listeners racing each other.
     @StateObject private var store = StoreManager()
     @StateObject private var inbox = SpacesInbox()
+    @StateObject private var agentsStore = AgentsStore()
+    @ObservedObject private var folderStore = FolderStore.shared
     @Environment(\.scenePhase) private var scenePhase
 
     enum Tab: Int, CaseIterable, Identifiable {
         case home = 0
         case spacechatAI = 1
-        case messages = 2
-        case settings = 3
+        case folders = 2
+        case messages = 3
+        case settings = 4
         var id: Int { rawValue }
     }
 
@@ -52,7 +55,13 @@ struct GameHubView: View {
             .safeAreaInsets
     }
 
-    @State private var tab: Tab = .home
+    /// The app opens on Messages, where the agents are. After a match it comes back to Home, where Play is.
+    @MainActor static var openTab: Tab = .messages
+    @State private var tab: Tab = GameHubView.openTab
+    /// The login page, opened from the "Log in" button on Home and Settings.
+    /// Presented over the hub rather than by swapping `RootView`'s phase, so
+    /// the player comes back to the same tab they left.
+    @State private var showLogin = false
     /// Which way the last switch moved, so insertion and removal slide the
     /// same way. Recomputed on every change rather than derived inside the
     /// transition, which is evaluated too late to know where we came from.
@@ -64,14 +73,19 @@ struct GameHubView: View {
                 switch tab {
                 case .home:
                     MainMenuView(player: player, authState: authState, sync: sync,
-                                 store: store, save: save, onPlay: onPlay)
+                                 store: store, save: save,
+                                 onLogin: { showLogin = true },
+                                 onPlay: { GameHubView.openTab = .home; onPlay() })
                 case .spacechatAI:
                     SpacechatAIView(authState: authState, player: player, save: save)
+                case .folders:
+                    FoldersView(folders: folderStore, agents: agentsStore)
                 case .messages:
-                    MessagesView(authState: authState, inbox: inbox)
+                    MessagesView(authState: authState, inbox: inbox, agents: agentsStore, folders: folderStore)
                 case .settings:
                     SettingsPageView(player: player, authState: authState,
-                                     sync: sync, store: store, save: save)
+                                     sync: sync, store: store, save: save,
+                                     onLogin: { showLogin = true })
                 }
             }
             .transition(.asymmetric(
@@ -95,6 +109,15 @@ struct GameHubView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.white)
         .ignoresSafeArea(.container)
+        // Signing in changes `authState`, which `RootView` already watches to
+        // adopt the Spacechat account, and which the inbox task below watches
+        // to start Messages — so all this has to do on success is close.
+        .fullScreenCover(isPresented: $showLogin) {
+            SignInView(authState: authState,
+                       onSignedIn: { showLogin = false },
+                       onClose: { showLogin = false })
+                .preferredColorScheme(.light)
+        }
         .onChange(of: scenePhase) { _ in inbox.persist() }
         .onChange(of: inbox.incomingAlertID) { _ in HapticsManager.shared.impact(.light) }
         .task(id: authState.spacechatUsername) {
@@ -115,18 +138,25 @@ struct GameHubView: View {
 
     private var banner: some View {
         HStack(spacing: 2) {
-            tabButton(.home) {
+            tabButton(.home, label: "Home") {
                 Image(systemName: "house.fill")
                     .font(.system(size: 17, weight: .semibold))
             }
-            tabButton(.spacechatAI) {
-                SpacechatMark(size: 19, active: tab == .spacechatAI)
+            tabButton(.spacechatAI, label: "Spacechat AI") {
+                // The circles fill only ~70% of the mark's frame, so it is
+                // drawn larger than the SF Symbols beside it to read at the
+                // same visual weight.
+                SpacechatMark(size: 25, active: tab == .spacechatAI)
             }
-            tabButton(.messages) {
+            tabButton(.folders, label: "Folders") {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 16, weight: .semibold))
+            }
+            tabButton(.messages, label: "Messages") {
                 Image(systemName: "bubble.left.and.bubble.right.fill")
                     .font(.system(size: 16, weight: .semibold))
             }
-            tabButton(.settings) {
+            tabButton(.settings, label: "Settings") {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 17, weight: .semibold))
             }
@@ -136,7 +166,7 @@ struct GameHubView: View {
         .background(Color(white: 0.93), in: Capsule())
     }
 
-    private func tabButton<Icon: View>(_ target: Tab, @ViewBuilder icon: () -> Icon) -> some View {
+    private func tabButton<Icon: View>(_ target: Tab, label: String, @ViewBuilder icon: () -> Icon) -> some View {
         Button {
             guard tab != target else { return }
             movingForward = target.rawValue > tab.rawValue
@@ -147,21 +177,27 @@ struct GameHubView: View {
         } label: {
             icon()
                 .foregroundColor(tab == target ? .black : .black.opacity(0.32))
-                .frame(width: 46, height: 34)
+                .frame(width: 42, height: 34)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(tab == target ? .isSelected : [])
     }
 }
 
-/// The Spacechat logo, drawn from its own source rather than shipped as a
-/// PNG.
+/// The Spacechat logo — three solid circles in a line, each covering most of
+/// the one behind it. This is the mark Spacechat itself uses for Spacechat AI
+/// (`SpacechatCircleMark` in the Spacechat app's SpacechatKit), so the game's
+/// AI tab and AI page show the same logo the AI has in Spacechat. The old 4x4
+/// pixel grid this replaces is Spacechat's retired mark; Spacechat only keeps
+/// its name (`SpacechatPixelLogo`) for existing call sites.
 ///
-/// Transcribed cell for cell from `spacechat_vision/spacechat_pixel_logo.svg`
-/// — a 4x4 pixel grid with the top-left quadrant empty, in the four brand
-/// blues. Drawing it means it stays crisp at any size (the SVG itself is
-/// `shape-rendering="crispEdges"`, so square cells are the design, not an
-/// approximation) and needs no asset catalog entry.
+/// Drawn from the source geometry rather than shipped as an image: a 512
+/// canvas, circle radius 182.86, centres 73.14 apart (the web client's
+/// /cyrcle files). That keeps it crisp at any size and needs no asset entry.
+/// The three circles span exactly `size` points across, front circle on the
+/// left, so the mark can be dropped in wherever a square icon goes.
 ///
 /// `active` handles the banner's selected state: a brand logo shouldn't be
 /// tinted flat black the way an SF Symbol is, so it keeps its real colours
@@ -170,44 +206,31 @@ struct SpacechatMark: View {
     var size: CGFloat = 18
     var active: Bool = true
 
-    private struct Cell {
-        let x: Int
-        let y: Int
-        let color: Color
-        /// Grey level used when the tab isn't selected, chosen to preserve
-        /// the logo's own light-to-dark structure.
-        let mutedWhite: Double
-    }
+    // The brand blues, as in SpacechatCircleMark.
+    private static let cyan = Color(red: 0.141, green: 0.753, blue: 0.894)
+    private static let blue = Color(red: 0.047, green: 0.588, blue: 0.847)
+    private static let darkBlue = Color(red: 0.000, green: 0.282, blue: 0.424)
 
-    private static let pale = Color(red: 204 / 255, green: 252 / 255, blue: 252 / 255)
-    private static let cyan = Color(red: 36 / 255, green: 192 / 255, blue: 228 / 255)
-    private static let blue = Color(red: 12 / 255, green: 150 / 255, blue: 216 / 255)
-    private static let navy = Color(red: 0 / 255, green: 72 / 255, blue: 108 / 255)
-
-    private static let cells: [Cell] = [
-        Cell(x: 2, y: 0, color: pale, mutedWhite: 0.78), Cell(x: 3, y: 0, color: pale, mutedWhite: 0.78),
-        Cell(x: 2, y: 1, color: cyan, mutedWhite: 0.62), Cell(x: 3, y: 1, color: pale, mutedWhite: 0.78),
-        Cell(x: 0, y: 2, color: blue, mutedWhite: 0.48), Cell(x: 1, y: 2, color: blue, mutedWhite: 0.48),
-        Cell(x: 2, y: 2, color: cyan, mutedWhite: 0.62), Cell(x: 3, y: 2, color: cyan, mutedWhite: 0.62),
-        Cell(x: 0, y: 3, color: navy, mutedWhite: 0.34), Cell(x: 1, y: 3, color: blue, mutedWhite: 0.48),
-        Cell(x: 2, y: 3, color: blue, mutedWhite: 0.48), Cell(x: 3, y: 3, color: cyan, mutedWhite: 0.62)
-    ]
+    /// Grey levels used when the tab isn't selected, chosen to keep the
+    /// logo's own light-to-dark structure (front circle lightest).
+    private static let mutedCyan = Color(white: 0.62)
+    private static let mutedBlue = Color(white: 0.48)
+    private static let mutedDark = Color(white: 0.34)
 
     var body: some View {
-        Canvas { context, canvasSize in
-            let cell = canvasSize.width / 4
-            for item in Self.cells {
-                // Half a point of overlap: adjacent cells otherwise show
-                // hairline seams between them at fractional sizes.
-                let rect = CGRect(x: CGFloat(item.x) * cell,
-                                  y: CGFloat(item.y) * cell,
-                                  width: cell + 0.5,
-                                  height: cell + 0.5)
-                context.fill(Path(rect),
-                             with: .color(active ? item.color : Color(white: item.mutedWhite)))
-            }
+        let diameter = size * 365.72 / 512
+        let step = size * 73.14 / 512
+        ZStack(alignment: .leading) {
+            Circle().fill(active ? Self.darkBlue : Self.mutedDark)
+                .frame(width: diameter, height: diameter)
+                .offset(x: step * 2)
+            Circle().fill(active ? Self.blue : Self.mutedBlue)
+                .frame(width: diameter, height: diameter)
+                .offset(x: step)
+            Circle().fill(active ? Self.cyan : Self.mutedCyan)
+                .frame(width: diameter, height: diameter)
         }
-        .frame(width: size, height: size)
+        .frame(width: size, height: size, alignment: .leading)
+        .accessibilityHidden(true)
     }
-
 }

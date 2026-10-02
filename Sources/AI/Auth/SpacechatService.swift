@@ -10,6 +10,8 @@ enum SpacechatService {
         let username: String
         let displayName: String
         var picture: String = ""
+        /// Players added after a match live on this device, not on the server.
+        var isAgent: Bool { id.hasPrefix("dot:") }
     }
 
     struct Message: Codable, Identifiable, Equatable {
@@ -37,45 +39,95 @@ enum SpacechatService {
         var readAt: Double = 0
         var ownerID = ""
         var joined = true
+        /// Friends added to a server you created: they only exist on this device.
+        var agentMembers: [Peer]? = nil
         var id: String { (isGroup ? "group:" : "user:") + (peer.username.isEmpty ? peer.id : peer.username).lowercased() }
     }
 
     enum ServiceError: LocalizedError {
         case notSignedIn
+        /// The server answered 404: that route does not exist there (yet).
+        case missing
         case unavailable(String)
         var errorDescription: String? {
             switch self {
             case .notSignedIn: return "Your Spacechat session has expired. Sign in with Spacechat to continue."
+            case .missing: return "This isn't available on the server yet."
             case .unavailable(let message): return message.isEmpty ? "Couldn't reach Spacechat. Please try again." : message
             }
         }
     }
 
-    static func post(_ path: String, body: [String: Any] = [:]) async throws -> [String: Any] {
-        guard let session = SpacechatAuth.storedSession(), !session.isEmpty else { throw ServiceError.notSignedIn }
+    /// One in-flight session renewal shared by every request that hits an
+    /// expired session at once, so a burst of 401s logs in once, not N times.
+    private static var renewal: Task<String?, Never>?
+
+    /// Logs in again with the phrase in the Keychain — the same way the
+    /// Spacechat client renews an expired session.
+    static func renewSession() async -> String? {
+        if let renewal { return await renewal.value }
+        let task = Task<String?, Never> {
+            guard let phrase = SpacechatAuth.storedPhrase(),
+                  let account = try? await SpacechatAuth.login(phrase: phrase) else { return nil }
+            SpacechatAuth.storeSession(account.session)
+            return account.session
+        }
+        renewal = task
+        let session = await task.value
+        renewal = nil
+        return session
+    }
+
+    static func post(_ path: String, body: [String: Any] = [:], timeout: TimeInterval = 30, retryOnExpiry: Bool = true) async throws -> [String: Any] {
+        var session = SpacechatAuth.storedSession() ?? ""
+        if session.isEmpty {
+            guard retryOnExpiry, let fresh = await renewSession() else { throw ServiceError.notSignedIn }
+            session = fresh
+        }
         var request = URLRequest(url: SpacechatAuth.baseURL.appendingPathComponent("api").appendingPathComponent(path))
         request.httpMethod = "POST"
-        request.timeoutInterval = 30
+        request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(session, forHTTPHeaderField: "x-spacechat-session")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do { (data, response) = try await URLSession.shared.data(for: request) }
+        catch let error as URLError where error.code != .cancelled {
+            throw ServiceError.unavailable("Couldn't reach Spacechat. Check your connection and try again.")
+        }
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else { throw ServiceError.unavailable("") }
-        if http.statusCode == 401 { throw ServiceError.notSignedIn }
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw ServiceError.unavailable("Spacechat returned an invalid response. Please try again.")
+        let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? nil
+        if http.statusCode == 404 { throw ServiceError.missing }
+        if http.statusCode == 401 {
+            if retryOnExpiry, await renewSession() != nil {
+                return try await post(path, body: body, timeout: timeout, retryOnExpiry: false)
+            }
+            throw ServiceError.notSignedIn
         }
+        guard let json else { throw ServiceError.unavailable("Spacechat returned an invalid response. Please try again.") }
         guard (200..<300).contains(http.statusCode), json["ok"] as? Bool != false else {
-            throw ServiceError.unavailable(json["error"] as? String ?? "")
+            throw ServiceError.unavailable(json["error"] as? String ?? json["mes"] as? String ?? json["message"] as? String ?? "")
         }
         return json
     }
 
-    static func askSpacechatAI(_ text: String) async throws -> String {
-        let json = try await post("guide/message", body: ["message": text, "clientMessageId": UUID().uuidString])
-        guard let reply = json["reply"] as? String, !reply.isEmpty else { throw ServiceError.unavailable("") }
+    /// Spaces shows one agent, Dots; the server knows it as the plain Spacechat AI persona (`spaceai`).
+    static func askSpacechatAI(_ text: String, persona: String = "spaceai", voice: Bool = false, history: [[String: String]] = []) async throws -> String {
+        var body: [String: Any] = ["message": text, "persona": persona, "clientMessageId": "ios_spaces_\(Int(Date().timeIntervalSince1970 * 1000))"]
+        if voice { body["voice"] = true }
+        if !history.isEmpty { body["history"] = history }
+        let json = try await post("guide/message", body: body, timeout: 75)
+        let reply = ((json["reply"] as? String) ?? (json["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reply.isEmpty else { throw ServiceError.unavailable("") }
         return reply
+    }
+
+    /// The Spaces game agents (mind/brain/spaces-agents.js): chat lines for
+    /// several players at once, strategies, recaps, challenges, friends.
+    static func spacesAgents(_ body: [String: Any]) async throws -> [String: Any] {
+        try await post("spaces/agents", body: body, timeout: 25)
     }
 
     static func username(from raw: String) -> String {
@@ -336,12 +388,12 @@ final class SpacesInbox: ObservableObject {
         defer { if token == generation { polling = false } }
         let current = conversations.first { $0.id == activeID }
         var body: [String: Any] = [:]
-        if let current, !current.isGroup { body["activeChat"] = ["id": current.peer.id, "username": current.peer.username] }
+        if let current, !current.isGroup, !current.peer.isAgent { body["activeChat"] = ["id": current.peer.id, "username": current.peer.username] }
         do {
             let json = try await SpacechatService.post("poll", body: body)
             guard token == generation else { return }
             if let profile = json["activeChatProfile"] as? [String: Any], profile["blocked"] as? Bool != true,
-               let current, !current.isGroup {
+               let current, !current.isGroup, !current.peer.isAgent {
                 var chat = current
                 chat.peer = SpacechatService.peer(profile, fallback: current.peer.username)
                 chat.messages = ((profile["messages"] as? [[String: Any]] ?? []) + (profile["pendingMessages"] as? [[String: Any]] ?? [])).compactMap { SpacechatService.message($0) }
@@ -456,19 +508,80 @@ final class SpacesInbox: ObservableObject {
     }
 
     func send(text: String, chat: Conversation, retry: Message? = nil) async {
+        if !chat.isGroup && chat.peer.isAgent { await sendToFriend(text: text, chat: chat); return }
+        await sendToServer(text: text, chat: chat, retry: retry)
+        if chat.isGroup, let agents = chat.agentMembers, !agents.isEmpty, retry == nil {
+            await agentsReply(in: chat, agents: agents, to: text)
+        }
+    }
+
+    /// A friend from a match: nothing goes to the server, the reply comes
+    /// back a moment later like any other chat.
+    private func sendToFriend(text: String, chat: Conversation) async {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        let token = generation
+        var mine = Message(id: "spaces_" + UUID().uuidString, text: clean, incoming: false, createdAt: Date().timeIntervalSince1970 * 1000)
+        mine.delivery = "Delivered"
+        var next = chat; next.messages = [mine]; upsert(next, restore: true); persist()
+        let history = (conversations.first { $0.id == chat.id }?.messages ?? []).suffix(8)
+            .map { ($0.incoming ? chat.peer.displayName : "them") + ": " + $0.text }
+        typingPeerID = chat.peer.id; typingUntil = Date().addingTimeInterval(8)
+        let remembered = FriendsStore.shared.facts(for: chat.peer.username)
+        async let reply = DotChatDirector.reply(as: chat.peer.username, to: clean, history: Array(history), memory: remembered)
+        try? await Task.sleep(nanoseconds: UInt64(Double.random(in: 0.9...1.8) * 1_000_000_000))
+        let text = await reply
+        guard token == generation else { return }
+        typingPeerID = nil
+        var theirs = Message(id: "dot_" + UUID().uuidString, text: text, incoming: true, createdAt: Date().timeIntervalSince1970 * 1000)
+        theirs.senderName = chat.peer.displayName
+        var back = chat; back.messages = [theirs]; upsert(back, countUnread: true); persist()
+        // Every few messages the friend takes note of what they learned about you.
+        let said = (conversations.first { $0.id == chat.id }?.messages ?? []).filter { !$0.incoming }.map(\.text)
+        if said.count % 4 == 0 {
+            let username = chat.peer.username
+            Task { FriendsStore.shared.remember(await DotChatDirector.learn(from: said), for: username) }
+        }
+    }
+
+    /// Friends added to a server answer in it, one or two at a time.
+    private func agentsReply(in chat: Conversation, agents: [Peer], to text: String) async {
+        let token = generation
+        let speakers = agents.shuffled().prefix(Int.random(in: 1...min(2, agents.count)))
+        for agent in speakers {
+            try? await Task.sleep(nanoseconds: UInt64(Double.random(in: 1.0...2.2) * 1_000_000_000))
+            let said = await DotChatDirector.reply(as: agent.username, to: text, room: chat.peer.displayName,
+                                                   memory: FriendsStore.shared.facts(for: agent.username))
+            guard token == generation else { return }
+            var msg = Message(id: "dot_" + UUID().uuidString, text: said, incoming: true, createdAt: Date().timeIntervalSince1970 * 1000)
+            msg.senderName = agent.displayName
+            var back = chat; back.messages = [msg]; upsert(back, countUnread: true); persist()
+        }
+    }
+
+    /// Opens (or starts) the chat with a friend.
+    func openFriend(_ peer: Peer) {
+        var chat = Conversation(peer: peer)
+        chat.updatedAt = Date().timeIntervalSince1970 * 1000
+        upsert(chat, restore: true)
+        activeID = chat.id; markRead([chat.id]); persist()
+    }
+
+    private func sendToServer(text: String, chat: Conversation, retry: Message? = nil) async {
         guard !sendingIDs.contains(chat.id), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let token = generation
         sendingIDs.insert(chat.id)
         defer { if token == generation { sendingIDs.remove(chat.id) } }
+        if chat.isRequest { accept(chat.id) }
         var message = retry ?? Message(id: "spaces_" + UUID().uuidString, text: text.trimmingCharacters(in: .whitespacesAndNewlines), incoming: false, createdAt: Date().timeIntervalSince1970 * 1000)
         message.delivery = "Sending…"
         var next = chat; next.messages = [message]; upsert(next); persist()
         do {
             let json: [String: Any]
             if chat.isGroup {
-                json = try await SpacechatService.post("group/send", body: ["groupId": chat.peer.id, "message": message.text, "clientMessageId": message.id, "timestamp": message.createdAt])
+                json = try await SpacechatService.post("group/send", body: ["groupId": chat.peer.id, "message": message.text, "clientMessageId": message.id, "timestamp": Int(message.createdAt)])
             } else {
-                json = try await SpacechatService.post("send-message", body: ["id": chat.peer.id, "to": chat.peer.id, "username": chat.peer.username, "text": message.text, "message": message.text, "clientMessageId": message.id, "timestamp": message.createdAt])
+                json = try await SpacechatService.post("send-message", body: ["id": chat.peer.id, "to": chat.peer.id, "username": chat.peer.username, "text": message.text, "message": message.text, "clientMessageId": message.id, "timestamp": Int(message.createdAt)])
             }
             guard token == generation else { return }
             if SpacechatService.string(json, "reason") == "target-not-found" { throw SpacechatService.ServiceError.unavailable("This user could not be found.") }
@@ -483,17 +596,22 @@ final class SpacesInbox: ObservableObject {
     }
 
     func typing(_ value: Bool, chat: Conversation) async {
-        guard !chat.isGroup, value != lastTypingValue || Date().timeIntervalSince(lastTypingAt) > 3 else { return }
+        guard !chat.isGroup, !chat.peer.isAgent, value != lastTypingValue || Date().timeIntervalSince(lastTypingAt) > 3 else { return }
         lastTypingAt = Date(); lastTypingValue = value
         _ = try? await SpacechatService.post("typing", body: ["id": chat.peer.id, "username": chat.peer.username, "c": value, "typing": value])
     }
 
     func createGroup(name: String, description: String, visibility: String, members: [Peer]) async throws {
         let token = generation
-        let json = try await SpacechatService.post("group/create", body: ["name": name, "description": description, "visibility": visibility, "members": members.map(\.id), "allowMemberInvite": false, "background": "auto"])
+        let json = try await SpacechatService.post("group/create", body: ["name": name, "description": description, "visibility": visibility, "members": members.filter { !$0.isAgent }.map(\.id), "allowMemberInvite": false, "background": "auto"])
         guard token == generation else { throw CancellationError() }
         guard let row = json["group"] as? [String: Any] else { throw SpacechatService.ServiceError.unavailable("The group could not be created.") }
-        let chat = group(row); upsert(chat, restore: true); activeID = chat.id; persist()
+        var chat = group(row)
+        let friends = members.filter(\.isAgent)
+        if !friends.isEmpty { chat.agentMembers = friends }
+        upsert(chat, restore: true)
+        if !friends.isEmpty, let i = conversations.firstIndex(where: { $0.id == chat.id }) { conversations[i].agentMembers = friends }
+        activeID = chat.id; persist()
     }
 
     func invite(_ peer: Peer, to chat: Conversation) async throws {

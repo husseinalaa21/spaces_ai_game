@@ -22,6 +22,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Talk to the Dots agent by voice in Spaces.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Understand what you say when you talk to the Dots agent.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan a Spacechat profile QR code to start a conversation.</string>
 	<key>UILaunchScreen</key>

@@ -123,21 +123,23 @@ enum SpacechatAuth {
         // Parsed as raw JSON rather than through Codable so `prepaidDatabase`
         // survives untouched — see the note on `Account.database`.
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        let message = json["message"] as? String ?? ""
+        // The server reports errors under `mes` (or `error`); the Spacechat
+        // client reads them in that order too.
+        let message = json["mes"] as? String ?? json["error"] as? String ?? json["message"] as? String ?? ""
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw AuthError.rejected(message)
         }
 
-        let session = json["session"] as? String ?? ""
+        let session = json["sessionToken"] as? String ?? json["session"] as? String ?? ""
         guard json["connected"] as? Bool == true, !session.isEmpty else {
             throw AuthError.rejected(message)
         }
 
-        let username = json["username"] as? String ?? ""
+        let username = json["username"] as? String ?? json["user"] as? String ?? json["id"] as? String ?? ""
         let name = json["name"] as? String ?? ""
         return Account(
-            id: json["id"] as? String ?? "",
+            id: json["tempId"] as? String ?? json["id"] as? String ?? "",
             session: session,
             username: username,
             displayName: name.isEmpty ? username : name,
@@ -155,14 +157,71 @@ enum SpacechatAuth {
     private static let phraseAccount = "com.spacechat.ai.recoveryPhrase"
     private static let sessionAccount = "com.spacechat.ai.session"
 
-    static func storePhrase(_ phrase: String) { keychainSet(phraseAccount, normalize(phrase)) }
-    static func storedPhrase() -> String? { keychainGet(phraseAccount) }
-    static func storeSession(_ session: String) { keychainSet(sessionAccount, session) }
-    static func storedSession() -> String? { keychainGet(sessionAccount) }
+    /// Process-lifetime copies. If the Keychain refuses a write (a build
+    /// without keychain entitlements, a locked device) the player must still
+    /// be able to use the app until it is closed, instead of being told their
+    /// session expired right after signing in.
+    private static var memory: [String: String] = [:]
+    private static let memoryLock = NSLock()
+    private static func remember(_ account: String, _ value: String?) {
+        memoryLock.lock(); defer { memoryLock.unlock() }
+        memory[account] = value
+    }
+    private static func remembered(_ account: String) -> String? {
+        memoryLock.lock(); defer { memoryLock.unlock() }
+        return memory[account]
+    }
+
+    static func storePhrase(_ phrase: String) { remember(phraseAccount, normalize(phrase)); keychainSet(phraseAccount, normalize(phrase)) }
+    static func storedPhrase() -> String? { keychainGet(phraseAccount) ?? remembered(phraseAccount) }
+    static func storeSession(_ session: String) { remember(sessionAccount, session); keychainSet(sessionAccount, session) }
+    static func storedSession() -> String? { keychainGet(sessionAccount) ?? remembered(sessionAccount) }
 
     static func clearStoredCredentials() {
+        remember(phraseAccount, nil)
+        remember(sessionAccount, nil)
         keychainDelete(phraseAccount)
         keychainDelete(sessionAccount)
+    }
+
+    // MARK: - Apple-linked phrase
+
+    /// Sign in with Apple has no Spacechat phrase of its own, so one is made
+    /// the first time and kept in the iCloud Keychain, keyed by the Apple
+    /// user id. The same Apple ID on another device finds the same phrase
+    /// and therefore the same Spacechat account.
+    static func applePhrase(forAppleUser user: String) -> String {
+        let account = "com.spacechat.ai.apple." + user
+        if let existing = syncedGet(account), isValid(existing) { return existing }
+        let fresh = generatePhrase()
+        syncedSet(account, fresh)
+        return fresh
+    }
+
+    private static func syncedQuery(_ account: String) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: "com.spacechat.ai.apple",
+         kSecAttrAccount as String: account,
+         kSecAttrSynchronizable as String: kCFBooleanTrue as Any]
+    }
+
+    private static func syncedSet(_ account: String, _ value: String) {
+        guard let data = value.data(using: .utf8) else { return }
+        SecItemDelete(syncedQuery(account) as CFDictionary)
+        var query = syncedQuery(account)
+        query[kSecValueData as String] = data
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    private static func syncedGet(_ account: String) -> String? {
+        var query = syncedQuery(account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     private static func keychainQuery(_ account: String) -> [String: Any] {

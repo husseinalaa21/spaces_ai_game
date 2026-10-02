@@ -36,11 +36,24 @@ final class AuthState: ObservableObject {
     /// Keychain (see `SpacechatAuth`), never here.
     @Published var spacechatUsername: String?
 
+    /// "apple" or "phrase": which route the account came in by. Apple players
+    /// also hold a Spacechat session now, so the username alone can't say.
+    private let kindKey = "ai_sign_in_kind"
     private let spacechatUsernameKey = "ai_spacechat_username"
 
     /// The most recent Spacechat account, handed to `SpacechatSync` so it
     /// doesn't have to log in a second time right after signing in.
     private(set) var lastAccount: SpacechatAuth.Account?
+
+    /// True for an Apple sign-in, including ones made before `kindKey` existed
+    /// (those have no kind, no Spacechat username and aren't the guest).
+    private var isAppleSession: Bool {
+        let kind = defaults.string(forKey: kindKey)
+        if kind == "apple" { return true }
+        guard kind == nil, defaults.string(forKey: spacechatUsernameKey) == nil,
+              let id = defaults.string(forKey: userIDKey) else { return false }
+        return id != guestUserID
+    }
 
     init() {
         isSignedIn = defaults.string(forKey: userIDKey) != nil
@@ -63,6 +76,7 @@ final class AuthState: ObservableObject {
             SpacechatAuth.storeSession(account.session)
             lastAccount = account
             defaults.set(account.id, forKey: userIDKey)
+            defaults.set("phrase", forKey: kindKey)
             defaults.set(account.username, forKey: spacechatUsernameKey)
             if !account.displayName.isEmpty {
                 defaults.set(account.displayName, forKey: nameKey)
@@ -81,6 +95,7 @@ final class AuthState: ObservableObject {
 
     func completeSignIn(userID: String, fullName: PersonNameComponents?) {
         defaults.set(userID, forKey: userIDKey)
+        defaults.set("apple", forKey: kindKey)
         if let fullName {
             let formatted = PersonNameComponentsFormatter().string(from: fullName)
             if !formatted.isEmpty {
@@ -115,11 +130,20 @@ final class AuthState: ObservableObject {
             // so it has to be persisted now or it's gone for good.
             completeSignIn(userID: credential.user, fullName: credential.fullName)
             errorMessage = nil
+            // Apple only proves who this is; Messages and Spacechat AI need a
+            // Spacechat session, so one is created in the background (and
+            // retried at launch if the network is down right now).
+            Task { await linkAppleToSpacechat(userID: credential.user) }
             return true
         case .failure(let error):
             // Cancelling isn't an error worth surfacing.
-            if let authError = error as? ASAuthorizationError, authError.code == .canceled {
-                errorMessage = nil
+            if let authError = error as? ASAuthorizationError {
+                switch authError.code {
+                case .canceled: errorMessage = nil
+                case .unknown, .notHandled:
+                    errorMessage = "Sign in with Apple isn't available right now. Check that you're signed in to iCloud in Settings, or use your Spacechat phrase."
+                default: errorMessage = "Apple sign in didn't complete. Please try again."
+                }
             } else {
                 errorMessage = "Sign in didn't complete. Please try again."
             }
@@ -127,10 +151,38 @@ final class AuthState: ObservableObject {
         }
     }
 
+    /// Creates (or signs back in to) the Spacechat account that belongs to
+    /// this Apple ID. The phrase lives in the iCloud Keychain, so the same
+    /// Apple ID on a new device reaches the same account.
+    func linkAppleToSpacechat(userID: String) async {
+        guard spacechatUsername == nil else { return }
+        let phrase = SpacechatAuth.applePhrase(forAppleUser: userID)
+        do {
+            let account = try await SpacechatAuth.login(phrase: phrase)
+            SpacechatAuth.storePhrase(phrase)
+            SpacechatAuth.storeSession(account.session)
+            lastAccount = account
+            defaults.set(account.username, forKey: spacechatUsernameKey)
+            if displayName == nil, !account.displayName.isEmpty { displayName = account.displayName }
+            spacechatUsername = account.username
+        } catch {
+            // Not fatal: the player is still signed in with Apple and plays on.
+        }
+    }
+
+    /// Called at launch: an Apple player whose account link did not finish
+    /// (offline at the time) gets another go.
+    func retryAppleLinkIfNeeded() async {
+        guard spacechatUsername == nil, isAppleSession,
+              let userID = defaults.string(forKey: userIDKey), userID != guestUserID else { return }
+        await linkAppleToSpacechat(userID: userID)
+    }
+
     func signOut() {
         defaults.removeObject(forKey: userIDKey)
         defaults.removeObject(forKey: nameKey)
         defaults.removeObject(forKey: spacechatUsernameKey)
+        defaults.removeObject(forKey: kindKey)
         // The phrase is the account: leaving it in the Keychain after a sign
         // out would let the next person on this device walk straight back in.
         SpacechatAuth.clearStoredCredentials()
@@ -147,7 +199,7 @@ final class AuthState: ObservableObject {
         // Only meaningful for an Apple session: a Spacechat id is not an
         // Apple user identifier, and asking Apple about one returns
         // .notFound, which would sign the player straight back out.
-        guard spacechatUsername == nil,
+        guard isAppleSession,
               let userID = defaults.string(forKey: userIDKey),
               userID != guestUserID else { return }
         ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { [weak self] state, _ in

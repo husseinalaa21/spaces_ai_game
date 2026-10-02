@@ -13,6 +13,8 @@ struct SettingsPageView: View {
     @ObservedObject var sync: SpacechatSync
     @ObservedObject var store: StoreManager
     var save: () -> Void
+    /// Opens the login page from the "Log in" button under the Account card.
+    var onLogin: () -> Void = {}
 
     @State private var showSignOutConfirm = false
     @State private var showPhraseSheet = false
@@ -26,6 +28,10 @@ struct SettingsPageView: View {
                 VStack(spacing: 22) {
                     header
                     accountSection
+                    // The same button as under Play on the home page.
+                    if authState.isGuest {
+                        LogInButton(action: onLogin)
+                    }
                     membershipSection
                     gameSection
                     aboutSection
@@ -205,6 +211,9 @@ struct SettingsPageView: View {
                 linkRow(icon: "doc.text", title: "Terms of Use",
                         subtitle: "The terms covering Spaces",
                         url: SpacesLinks.terms)
+                linkRow(icon: "doc.plaintext", title: "License Agreement (EULA)",
+                        subtitle: "Apple's standard end user license agreement",
+                        url: SpacesLinks.appleEULA)
                 linkRow(icon: "arrow.uturn.backward.circle", title: "Request a refund",
                         subtitle: "Refunds are handled by Apple",
                         url: SpacesLinks.refunds)

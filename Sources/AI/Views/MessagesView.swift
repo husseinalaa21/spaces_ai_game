@@ -6,6 +6,10 @@ import AVFoundation
 struct MessagesView: View {
     @ObservedObject var authState: AuthState
     @ObservedObject var inbox: SpacesInbox
+    /// Agents live on this page too: a Chats | Agents switch under the banner.
+    @ObservedObject var agents: AgentsStore
+    @ObservedObject var folders: FolderStore
+    @State private var section = 0
     @Environment(\.scenePhase) private var scenePhase
     @State private var query = ""
     @State private var results: [SpacechatService.Peer] = []
@@ -15,6 +19,8 @@ struct MessagesView: View {
     @State private var selected: Set<String> = []
     @State private var showSignIn = false
     @State private var sheet: InboxSheet?
+    @State private var keyboardUp = false
+    @ObservedObject private var friends = FriendsStore.shared
     @State private var deleteIDs: Set<String> = []
     @State private var opening = false
     @FocusState private var searchFocused: Bool
@@ -46,7 +52,11 @@ struct MessagesView: View {
             Color.clear.frame(height: GameHubView.bannerTopInset + 52)
             if !signedIn { signInNotice }
             else if let active { thread(active) }
-            else { inboxPage }
+            else {
+                sectionSwitch
+                if section == 0 { inboxPage }
+                else { AgentsView(authState: authState, store: agents, folders: folders, embedded: true) }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.white)
@@ -116,6 +126,28 @@ struct MessagesView: View {
         }.padding(28)
     }
 
+    private var sectionSwitch: some View {
+        HStack(spacing: 4) {
+            ForEach([(0, "Chats"), (1, "Agents")], id: \.0) { item in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { section = item.0 }
+                    searchFocused = false
+                } label: {
+                    HStack(spacing: 6) {
+                        if item.0 == 1 { AgentAvatar(id: "builtin-dots", hue: 0.60, size: 18) }
+                        Text(item.1).font(.system(size: 14, weight: .bold))
+                    }
+                    .foregroundColor(section == item.0 ? .white : .black.opacity(0.55))
+                    .frame(maxWidth: .infinity).padding(.vertical, 9)
+                    .background(section == item.0 ? Color.black : Color.clear, in: Capsule())
+                }.buttonStyle(.plain)
+                .accessibilityAddTraits(section == item.0 ? .isSelected : [])
+            }
+        }
+        .padding(4).background(Color(white: 0.95), in: Capsule())
+        .padding(.horizontal, 20).padding(.bottom, 8)
+    }
+
     private var inboxPage: some View {
         VStack(spacing: 0) {
             HStack {
@@ -161,6 +193,42 @@ struct MessagesView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     if !query.isEmpty { userResults }
+                    if !friends.friends.isEmpty && query.isEmpty && !selecting && inbox.filter == "All Messages" {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Friends").font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundColor(.black.opacity(0.5))
+                                .padding(.horizontal, 20)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 14) {
+                                    ForEach(friends.friends) { friend in
+                                        Button { inbox.openFriend(friend.peer) } label: {
+                                            VStack(spacing: 5) {
+                                                SpacesAvatar(peer: friend.peer, size: 52)
+                                                Text(friend.username).font(.system(size: 11, weight: .bold, design: .rounded))
+                                                    .foregroundColor(.black.opacity(0.7)).lineLimit(1).frame(width: 64)
+                                            }
+                                        }.buttonStyle(.plain)
+                                    }
+                                }.padding(.horizontal, 20)
+                            }
+                        }.padding(.top, 6).padding(.bottom, 10)
+                    }
+                    let requestCount = inbox.conversations.filter { $0.isRequest && !$0.archived }.count
+                    if requestCount > 0 && inbox.filter != "Requests" && query.isEmpty && !selecting {
+                        Button { inbox.filter = "Requests" } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "envelope.badge.fill").font(.system(size: 18, weight: .semibold))
+                                    .frame(width: 44, height: 44).background(Color.black.opacity(0.06), in: Circle())
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Message requests").font(.system(size: 16, weight: .semibold))
+                                    Text(requestCount == 1 ? "1 person wants to message you" : "\(requestCount) people want to message you")
+                                        .font(.system(size: 13)).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Text("\(requestCount)").font(.caption2.bold()).foregroundColor(.white).padding(7).background(Color.black, in: Capsule())
+                            }.padding(.horizontal, 20).padding(.vertical, 12).contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                        Divider().padding(.leading, 80)
+                    }
                     if inbox.loading { ProgressView("Loading messages…").padding(30) }
                     else if visible.isEmpty {
                         VStack(spacing: 10) {
@@ -287,14 +355,21 @@ struct MessagesView: View {
         }.padding(12).background(Color(white: 0.95)).padding(.horizontal, 16).padding(.bottom, 8)
     }
 
+    private static let outgoing = Color(red: 0.047, green: 0.588, blue: 0.847)
+    private static let outgoingPending = Color(red: 0.047, green: 0.588, blue: 0.847).opacity(0.55)
+    private static let incomingFill = Color(white: 0.945)
+
     private func thread(_ chat: SpacechatService.Conversation) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Button { inbox.close() } label: { Image(systemName: "chevron.left").font(.title3).frame(width: 44, height: 44) }.accessibilityLabel("Back to messages")
-                SpacesAvatar(peer: chat.peer, group: chat.isGroup, size: 38)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(chat.peer.displayName).font(.headline).lineLimit(1)
-                    Text(chat.isGroup ? "Chatroom" : "@\(chat.peer.username)").font(.caption).foregroundColor(.secondary).lineLimit(1)
+                Button { inbox.close() } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 18, weight: .bold)).foregroundColor(.black)
+                        .frame(width: 42, height: 42).background(Color.black.opacity(0.06), in: Circle())
+                }.buttonStyle(.plain).accessibilityLabel("Back to messages")
+                SpacesAvatar(peer: chat.peer, group: chat.isGroup, size: 42)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(chat.peer.displayName).font(.system(size: 17, weight: .bold)).lineLimit(1)
+                    Text(chat.isGroup ? "Chatroom" : "@\(chat.peer.username)").font(.system(size: 12, weight: .medium)).foregroundColor(.black.opacity(0.55)).lineLimit(1)
                 }
                 Spacer()
                 Menu {
@@ -302,9 +377,11 @@ struct MessagesView: View {
                     Button(chat.archived ? "Unarchive" : "Archive", systemImage: "archivebox") { inbox.archive([chat.id], value: !chat.archived) }
                     Button(chat.muted ? "Unmute" : "Mute", systemImage: "bell.slash") { inbox.mute(chat.id) }
                     if !chat.isGroup { ShareLink("Share profile", item: SpacechatService.profileURL(chat.peer.username)) }
-                } label: { Image(systemName: "ellipsis.circle").font(.title3).frame(width: 44, height: 44) }.accessibilityLabel("Conversation options")
-            }.padding(.trailing, 10).padding(.bottom, 12)
-            Divider()
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 17, weight: .bold)).foregroundColor(.black)
+                        .frame(width: 42, height: 42).background(Color.black.opacity(0.06), in: Circle())
+                }.accessibilityLabel("Conversation options")
+            }.padding(.horizontal, 12).padding(.bottom, 10)
             if let error = inbox.error { errorBanner(error) }
             if chat.isRequest {
                 HStack {
@@ -315,7 +392,7 @@ struct MessagesView: View {
             }
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: 0) {
                         if chat.messages.isEmpty {
                             VStack(spacing: 10) {
                                 SpacesAvatar(peer: chat.peer, group: chat.isGroup, size: 70)
@@ -323,67 +400,100 @@ struct MessagesView: View {
                                 Text("Send a hello to \(chat.peer.displayName).").font(.subheadline).foregroundColor(.secondary)
                             }.frame(maxWidth: .infinity).padding(.vertical, 35)
                         }
-                        ForEach(chat.messages) { message in
-                            messageBubble(message, chat: chat).id(message.id)
+                        let latestOutgoing = chat.messages.last(where: { !$0.incoming })?.id
+                        ForEach(Array(chat.messages.enumerated()), id: \.element.id) { index, message in
+                            let previous = index > 0 ? chat.messages[index - 1] : nil
+                            if previous == nil || !Calendar.current.isDate(Date(timeIntervalSince1970: previous!.createdAt / 1000), inSameDayAs: Date(timeIntervalSince1970: message.createdAt / 1000)) {
+                                Text(dayLabel(message.createdAt)).font(.system(size: 11, weight: .semibold)).foregroundColor(.black.opacity(0.45))
+                                    .padding(.horizontal, 12).padding(.vertical, 5).background(Color.black.opacity(0.05), in: Capsule())
+                                    .padding(.vertical, 10)
+                            }
+                            let grouped = previous.map { $0.incoming == message.incoming && $0.senderName == message.senderName && abs(message.createdAt - $0.createdAt) < 5 * 60 * 1000 } ?? false
+                            messageBubble(message, chat: chat, grouped: grouped, isLatestOutgoing: message.id == latestOutgoing)
+                                .padding(.top, grouped ? 3 : 10).id(message.id)
                         }
                         if inbox.typingPeerID == chat.peer.id || inbox.typingPeerID == chat.peer.username {
-                            Text("\(chat.peer.displayName) is typing…").font(.caption).foregroundColor(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                            HStack { TypingBubble(); Spacer() }.padding(.top, 10)
                         }
                         Color.clear.frame(height: 1).id("latest")
-                    }.padding(16)
+                    }.padding(.horizontal, 14).padding(.vertical, 10)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onAppear { proxy.scrollTo("latest", anchor: .bottom) }
                 .onChange(of: chat.messages.last?.id) { _ in withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("latest", anchor: .bottom) } }
+                .onChange(of: inbox.typingPeerID) { _ in withAnimation { proxy.scrollTo("latest", anchor: .bottom) } }
             }
             composer(chat)
         }
         .id(chat.id)
         .task(id: chat.id) { await inbox.poll() }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardUp = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardUp = false }
     }
 
-    private func messageBubble(_ message: SpacechatService.Message, chat: SpacechatService.Conversation) -> some View {
-        HStack(alignment: .bottom) {
-            if !message.incoming { Spacer(minLength: 45) }
-            VStack(alignment: message.incoming ? .leading : .trailing, spacing: 4) {
-                if chat.isGroup && message.incoming && !message.senderName.isEmpty { Text(message.senderName).font(.caption.weight(.semibold)).foregroundColor(.secondary) }
-                Text(message.text).font(.body).textSelection(.enabled)
-                    .padding(.horizontal, 15).padding(.vertical, 11)
-                    .foregroundColor(message.incoming ? .black : .white)
-                    .background(message.incoming ? Color(white: 0.95) : Color.black, in: RoundedRectangle(cornerRadius: 19))
-                    .contextMenu { Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text } }
-                HStack(spacing: 5) {
-                    Text(message.timeLabel)
-                    if !message.incoming {
-                        if message.delivery.hasPrefix("Not sent") {
-                            Button("Retry") { Task { await inbox.send(text: message.text, chat: chat, retry: message) } }
-                                .disabled(inbox.sendingIDs.contains(chat.id)).foregroundColor(.red)
-                        } else { Text(message.delivery) }
-                    }
-                }.font(.system(size: 10)).foregroundColor(.secondary)
+    private func dayLabel(_ ms: Double) -> String {
+        let date = Date(timeIntervalSince1970: ms / 1000)
+        if Calendar.current.isDateInToday(date) { return "Today" }
+        if Calendar.current.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private func messageBubble(_ message: SpacechatService.Message, chat: SpacechatService.Conversation, grouped: Bool, isLatestOutgoing: Bool) -> some View {
+        let pending = !message.incoming && (message.delivery == "Sending…" || message.delivery.hasPrefix("Not sent"))
+        let failed = message.delivery.hasPrefix("Not sent")
+        return HStack(alignment: .bottom, spacing: 8) {
+            if !message.incoming { Spacer(minLength: 28) }
+            if message.incoming && chat.isGroup {
+                if grouped { Color.clear.frame(width: 30, height: 1) }
+                else { SpacesAvatar(peer: SpacechatService.Peer(id: message.senderName, username: message.senderName, displayName: message.senderName), size: 30) }
             }
-            if message.incoming { Spacer(minLength: 45) }
+            VStack(alignment: message.incoming ? .leading : .trailing, spacing: 3) {
+                if chat.isGroup && message.incoming && !grouped && !message.senderName.isEmpty {
+                    Text(message.senderName).font(.system(size: 12, weight: .semibold)).foregroundColor(.black.opacity(0.55))
+                }
+                Text(message.text).font(.system(size: 16)).textSelection(.enabled)
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .foregroundColor(message.incoming ? .black : .white)
+                    .background(message.incoming ? Self.incomingFill : (pending ? Self.outgoingPending : Self.outgoing), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .contextMenu { Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text } }
+                if !grouped || isLatestOutgoing || failed {
+                    HStack(spacing: 4) {
+                        Text(message.timeLabel.uppercased())
+                        if !message.incoming && failed {
+                            Button { Task { await inbox.send(text: message.text, chat: chat, retry: message) } } label: {
+                                Label("Not sent · Retry", systemImage: "exclamationmark.circle.fill")
+                            }.disabled(inbox.sendingIDs.contains(chat.id)).foregroundColor(.red)
+                        } else if !message.incoming && isLatestOutgoing {
+                            Image(systemName: message.delivery == "Delivered" ? "checkmark.circle.fill" : "checkmark")
+                            Text(message.delivery)
+                        }
+                    }.font(.system(size: 10, weight: .medium)).foregroundColor(.black.opacity(0.45))
+                }
+            }
+            if message.incoming { Spacer(minLength: 28) }
         }
     }
 
     private func composer(_ chat: SpacechatService.Conversation) -> some View {
-        HStack(alignment: .bottom, spacing: 10) {
+        let bottomInset: CGFloat = keyboardUp ? 8 : 10 + GameHubView.homeIndicatorInset
+        let draft = inbox.drafts[chat.id] ?? ""
+        let canSend = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && chat.joined
+        return HStack(alignment: .bottom, spacing: 8) {
             TextField("Message", text: Binding(get: { inbox.drafts[chat.id] ?? "" }, set: { inbox.drafts[chat.id] = $0 }), axis: .vertical)
-                .lineLimit(1...5).padding(.horizontal, 16).padding(.vertical, 11)
-                .background(Color(white: 0.95), in: RoundedRectangle(cornerRadius: 22))
+                .lineLimit(1...5).font(.system(size: 16)).tint(Self.outgoing)
+                .padding(.horizontal, 16).padding(.vertical, 11)
+                .background(Self.incomingFill, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.black.opacity(0.06), lineWidth: 1))
                 .onChange(of: inbox.drafts[chat.id]) { value in Task { await inbox.typing(!(value ?? "").isEmpty, chat: chat) } }
             Button {
                 let text = inbox.drafts[chat.id] ?? ""
                 inbox.drafts[chat.id] = ""
                 Task { await inbox.send(text: text, chat: chat) }
             } label: {
-                Group {
-                    if inbox.sendingIDs.contains(chat.id) { ProgressView().tint(.white) }
-                    else { Image(systemName: "arrow.up").font(.system(size: 17, weight: .bold)) }
-                }.foregroundColor(.white).frame(width: 44, height: 44).background(Color.black, in: Circle())
-            }.accessibilityLabel("Send message")
-                .disabled(inbox.sendingIDs.contains(chat.id) || (inbox.drafts[chat.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !chat.joined)
-        }.padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 12 + GameHubView.homeIndicatorInset)
+                Image(systemName: "arrow.up").font(.system(size: 17, weight: .bold)).foregroundColor(canSend ? .white : .black.opacity(0.3))
+                    .frame(width: 44, height: 44).background(canSend ? Self.outgoing : Color.black.opacity(0.08), in: Circle())
+            }.buttonStyle(.plain).accessibilityLabel("Send message").disabled(!canSend)
+        }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, bottomInset)
             .background(Color.white)
     }
 
@@ -412,6 +522,19 @@ struct MessagesView: View {
             do { try await inbox.open(username: username); query = "" }
             catch { inbox.report(error) }
         }
+    }
+}
+
+private struct TypingBubble: View {
+    @State private var phase = 0
+    private let timer = Timer.publish(every: 0.35, on: .main, in: .common).autoconnect()
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(0..<3, id: \.self) { i in Circle().fill(Color.black.opacity(phase == i ? 0.55 : 0.2)).frame(width: 7, height: 7) }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 13)
+        .background(Color(white: 0.945), in: Capsule())
+        .onReceive(timer) { _ in phase = (phase + 1) % 3 }
     }
 }
 
@@ -461,6 +584,12 @@ private struct SpacesNewChatSheet: View {
     @State private var working = false
     @State private var searching = false
     @State private var error: String?
+    @FocusState private var queryFocused: Bool
+    @ObservedObject private var friends = FriendsStore.shared
+    private var showsFriends: Bool {
+        if case .invite = mode { return false }
+        return query.isEmpty && !friends.friends.isEmpty
+    }
     private var isGroup: Bool { if case .group = mode { return true }; return false }
     private var title: String {
         switch mode { case .message: return "New message"; case .group: return "Create chatroom"; case .invite: return "Add members" }
@@ -487,13 +616,22 @@ private struct SpacesNewChatSheet: View {
                 Section(isGroup ? "Find members" : "Find a Spacechat user") {
                     TextField("Username or Spacechat profile link", text: $query)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search)
+                        .focused($queryFocused)
                     if searching || working { ProgressView() }
+                    if showsFriends {
+                        Text("Friends").font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundColor(.secondary)
+                        ForEach(friends.friends) { friend in
+                            Button { choose(friend.peer) } label: {
+                                HStack { SpacesPeerRow(peer: friend.peer); if members.contains(where: { $0.id == friend.peer.id }) { Image(systemName: "checkmark.circle.fill") } }
+                            }.disabled(working)
+                        }
+                    }
                     ForEach(results) { peer in
                         Button { choose(peer) } label: {
                             HStack { SpacesPeerRow(peer: peer); if members.contains(where: { $0.id == peer.id }) { Image(systemName: "checkmark.circle.fill") } }
                         }.disabled(working)
                     }
-                    if results.isEmpty && !searching { Text("Search for someone by username to connect.").font(.caption).foregroundColor(.secondary) }
+                    if results.isEmpty && !searching && !showsFriends { Text("Search for someone by username to connect.").font(.caption).foregroundColor(.secondary) }
                     if let error { Text(error).font(.caption).foregroundColor(.red) }
                 }
                 if isGroup {
@@ -505,6 +643,7 @@ private struct SpacesNewChatSheet: View {
             }
             .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: finished).disabled(working) } }
+            .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { queryFocused = true } }
             .task(id: query) {
                 results = []; error = nil
                 guard query.count >= 2 else { searching = false; return }
@@ -532,7 +671,8 @@ private struct SpacesNewChatSheet: View {
             defer { working = false }
             do {
                 switch mode {
-                case .message: try await inbox.open(username: peer.username)
+                case .message:
+                    if peer.isAgent { inbox.openFriend(peer) } else { try await inbox.open(username: peer.username) }
                 case .invite(let chat): try await inbox.invite(peer, to: chat)
                 case .group: break
                 }

@@ -1,190 +1,359 @@
 import SwiftUI
 
-/// The Spacechat AI page, in the game's own white frame rather than the
-/// Spacechat app's dark one.
+/// The Spacechat AI page, laid out like Spacechat's own AI tab: conversation
+/// history and a new-chat button on top, "What can I help with?" when empty,
+/// and a composer with a voice-chat button. Dots is the only agent here.
 ///
-/// Talks to the same assistant the Spacechat app does — `POST
-/// /api/guide/message`, whose server-side system prompt opens "You are
-/// Spacechat AI". The server keeps conversation history against the session,
-/// so each turn sends only the new message.
+/// Talks to the same assistant the Spacechat app does (`POST
+/// /api/guide/message`); history stays on this device per account.
 struct SpacechatAIView: View {
     @ObservedObject var authState: AuthState
     @ObservedObject var player: PlayerState
     var save: () -> Void
-    @State private var mode = "Chat"
+
+    private static let blue = Color(red: 0.23, green: 0.48, blue: 1.0)
+    private static let field = Color(white: 0.955)
+
+    @StateObject private var store = SpacesAIStore()
+    @State private var activeThreadID: String?
+    @State private var showHistory = false
+    @State private var historySearch = ""
     @State private var showSignIn = false
+    @State private var showVoice = false
+    @State private var mode = "Chat"
     @State private var generatedDot: NamedCustomDot?
     @State private var generatedUniverse: CustomUniverse?
     @State private var savedDesignID: UUID?
-
-    private struct Turn: Identifiable, Equatable {
-        let id = UUID()
-        let text: String
-        let fromAI: Bool
-    }
-
-    @State private var turns: [Turn] = []
     @State private var draft = ""
     @State private var isThinking = false
     @State private var errorMessage: String?
     @FocusState private var inputFocused: Bool
 
-    var body: some View {
-        VStack(spacing: 0) {
-            // Clears the banner floating above, which now sits below the
-            // device's own top inset.
-            Color.clear.frame(height: GameHubView.bannerTopInset + 46)
+    private var messages: [SpacesAIMessage] { store.thread(activeThreadID)?.messages ?? [] }
+    private var signedIn: Bool { authState.spacechatUsername != nil }
 
-            if authState.spacechatUsername == nil {
-                signedOutNotice
-            } else {
-                Picker("Spacechat AI mode", selection: $mode) {
-                    Text("Chat").tag("Chat")
-                    Text("Create dot").tag("Dot")
-                    Text("Create universe").tag("Universe")
-                }.pickerStyle(.segmented).padding(.horizontal, 16).padding(.bottom, 12).disabled(isThinking)
-                conversation
-                composer
+    var body: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                Color.clear.frame(height: GameHubView.bannerTopInset + 46)
+                if !signedIn {
+                    signedOutNotice
+                } else {
+                    header
+                    if messages.isEmpty && generatedDot == nil && generatedUniverse == nil { emptyState } else { conversation }
+                    composer
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.white)
+
+            if showHistory {
+                historyScreen
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                    .zIndex(1)
             }
         }
-        // Fills the display end to end; the composer below keeps its own
-        // clearance from the home indicator.
-        .background(Color.white)
+        .animation(.spring(response: 0.42, dampingFraction: 0.86), value: showHistory)
         .preferredColorScheme(.light)
         .sheet(isPresented: $showSignIn) {
             SpacechatPhraseView(authState: authState) { showSignIn = false }
         }
-        .onChange(of: authState.spacechatUsername) { _ in
-            turns = []; draft = ""; generatedDot = nil; generatedUniverse = nil
+        .fullScreenCover(isPresented: $showVoice) {
+            NativeAIVoiceScreen(
+                persona: "spaceai",
+                agentName: "Dots",
+                greeting: messages.last(where: { $0.role == "assistant" })?.text ?? "",
+                api: SpacesVoiceAPI(),
+                sessionToken: "",
+                sendTurn: { text in await sendVoiceTurn(text) },
+                onClose: { typeText in
+                    showVoice = false
+                    if typeText { inputFocused = true }
+                }
+            )
+        }
+        .task(id: authState.spacechatUsername) {
+            store.configure(account: authState.spacechatUsername)
+            activeThreadID = nil; draft = ""; generatedDot = nil; generatedUniverse = nil; errorMessage = nil
         }
     }
+
+    // MARK: - Pieces
 
     private var signedOutNotice: some View {
         VStack(spacing: 12) {
             Spacer()
-            SpacechatMark(size: 44)
+            DotsAgentAvatar(size: 72)
             Text("Spacechat AI")
                 .font(.system(size: 19, weight: .bold, design: .rounded))
-            Text("Sign in with a Spacechat phrase to chat with Spacechat AI.")
+            Text("Sign in with Apple or a Spacechat phrase to chat with the Dots agent.")
                 .font(.system(size: 13))
                 .foregroundColor(.black.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
-            Button("Sign in with Spacechat") { showSignIn = true }
-                .font(.subheadline.weight(.semibold)).padding(15)
+            Button("Sign in") { showSignIn = true }
+                .font(.subheadline.weight(.semibold)).padding(.horizontal, 26).padding(.vertical, 14)
                 .background(Color(white: 0.94), in: Capsule())
             Spacer()
         }
     }
 
-    private var conversation: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    if turns.isEmpty {
-                        emptyState
-                    }
-                    ForEach(turns) { turn in
-                        bubble(turn)
-                            .id(turn.id)
-                    }
-                    if generatedDot != nil || generatedUniverse != nil { designPreview }
-                    if !player.profile.customDotLibrary.isEmpty || !player.profile.customUniverses.isEmpty { creationsLibrary }
-                    if isThinking {
-                        typingIndicator.id("thinking")
-                    }
-                    if let errorMessage {
-                        Text(errorMessage)
-                            .font(.system(size: 12))
-                            .foregroundColor(.red.opacity(0.85))
-                            .padding(.horizontal, 4)
-                    }
-                }
-                .padding(16)
-            }
-            // Keeps the newest turn in view as the conversation grows.
-            .onChange(of: turns.count) { _ in
-                guard let last = turns.last else { return }
-                withAnimation(.easeOut(duration: 0.25)) {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                }
-            }
-            .onChange(of: isThinking) { thinking in
-                guard thinking else { return }
-                withAnimation(.easeOut(duration: 0.25)) {
-                    proxy.scrollTo("thinking", anchor: .bottom)
-                }
-            }
+    private var header: some View {
+        HStack {
+            iconButton("line.3.horizontal", label: "Conversation history") { inputFocused = false; showHistory = true }
+            Spacer()
+            iconButton("plus", label: "New conversation") { newConversation() }
         }
+        .padding(.horizontal, 16).padding(.vertical, 6)
+    }
+
+    private func iconButton(_ name: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: name)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.black.opacity(0.8))
+                .frame(width: 40, height: 40)
+                .background(Color.black.opacity(0.06), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                SpacechatMark(size: 20)
-                Text("Spacechat AI")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-            }
-            Text(mode == "Chat" ? "Chat with Spacechat AI, or create a dot and a universe of your own." : "Describe your \(mode.lowercased()). Try icy blue with silver stars, or a sunset world with a warm golden grid.")
-                .font(.system(size: 13))
+        VStack(spacing: 10) {
+            Spacer()
+            DotsAgentAvatar(size: 72)
+            Text("What can I help with?")
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+            Text("Ask Dots anything about Spaces, or have it design a dot or a universe for you.")
+                .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.black.opacity(0.5))
+                .multilineTextAlignment(.center)
+            VStack(spacing: 8) {
+                suggestion("How do I grow faster in Spaces?", mode: "Chat")
+                suggestion("Design me a new dot", mode: "Dot", prompt: "A glossy ocean-blue dot with silver stars")
+                suggestion("Design me a universe", mode: "Universe", prompt: "A sunset world with a warm golden grid")
+            }.padding(.top, 8)
+            Spacer(); Spacer()
         }
-        .padding(.vertical, 12)
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture { inputFocused = false }
     }
 
-    private func bubble(_ turn: Turn) -> some View {
-        HStack {
-            if !turn.fromAI { Spacer(minLength: 40) }
-            Text(turn.text)
-                .font(.system(size: 14))
-                .foregroundColor(turn.fromAI ? .black : .white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(turn.fromAI ? Color(white: 0.94) : Color.black,
-                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    private func suggestion(_ title: String, mode newMode: String, prompt: String? = nil) -> some View {
+        Button {
+            mode = newMode
+            if let prompt { draft = prompt } else { draft = title }
+            if newMode == "Chat" { send() } else { inputFocused = true }
+        } label: {
+            Text(title)
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundColor(.black)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14).padding(.vertical, 11)
+                .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain).disabled(isThinking)
+    }
+
+    private var conversation: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    ForEach(messages) { message in
+                        bubble(message).id(message.id)
+                    }
+                    if generatedDot != nil || generatedUniverse != nil { designPreview.id("design") }
+                    if isThinking { typingIndicator.id("thinking") }
+                    if let errorMessage {
+                        Text(errorMessage).font(.system(size: 12)).foregroundColor(.red.opacity(0.85)).padding(.horizontal, 4)
+                    }
+                    if !player.profile.customDotLibrary.isEmpty || !player.profile.customUniverses.isEmpty { creationsLibrary }
+                    Color.clear.frame(height: 1).id("end")
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onTapGesture { inputFocused = false }
+            .onChange(of: messages.count) { _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+            .onChange(of: isThinking) { _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+            .onAppear { proxy.scrollTo("end", anchor: .bottom) }
+        }
+    }
+
+    private func bubble(_ message: SpacesAIMessage) -> some View {
+        let mine = message.role == "user"
+        return HStack(alignment: .top, spacing: 8) {
+            if mine { Spacer(minLength: 40) } else { DotsAgentAvatar(size: 30) }
+            Text(message.text)
+                .font(.system(size: 14.5))
+                .foregroundColor(mine ? .white : .black)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(mine ? Self.blue : Self.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .textSelection(.enabled)
-            if turn.fromAI { Spacer(minLength: 40) }
+            if !mine { Spacer(minLength: 40) }
         }
     }
 
     private var typingIndicator: some View {
-        HStack(spacing: 5) {
-            ForEach(0..<3, id: \.self) { _ in
-                Circle().fill(Color.black.opacity(0.28)).frame(width: 6, height: 6)
-            }
+        HStack(spacing: 8) {
+            TypingDots()
         }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .background(Color(white: 0.94), in: Capsule())
-    }
-
-    private var composer: some View {
-        HStack(spacing: 10) {
-            TextField(mode == "Chat" ? "Message Spacechat AI" : "Describe your \(mode.lowercased())…", text: $draft, axis: .vertical)
-                .lineLimit(1...4)
-                .font(.system(size: 15))
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(Color(white: 0.95), in: RoundedRectangle(cornerRadius: 20))
-                .focused($inputFocused)
-
-            Button(action: send) {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 38, height: 38)
-                    .background(canSend ? Color.black : Color.black.opacity(0.25), in: Circle())
-            }
-            .disabled(!canSend)
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 10)
-        // Keeps the send button clear of the home indicator now that the
-        // page itself runs under it.
-        .padding(.bottom, GameHubView.homeIndicatorInset + 10)
-        .background(Color.white)
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(Self.field, in: Capsule())
     }
 
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isThinking
+    }
+
+    private var composer: some View {
+        VStack(spacing: 6) {
+            if mode != "Chat" {
+                HStack(spacing: 6) {
+                    Image(systemName: mode == "Dot" ? "circle.hexagongrid.fill" : "sparkles").font(.system(size: 12, weight: .bold))
+                    Text(mode == "Dot" ? "Designing a dot" : "Designing a universe").font(.system(size: 12, weight: .semibold))
+                    Button { mode = "Chat" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 14)) }.buttonStyle(.plain)
+                }
+                .foregroundColor(Self.blue).padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Self.blue.opacity(0.12), in: Capsule())
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                Menu {
+                    Button("Chat with Dots") { mode = "Chat" }
+                    Button("Design a dot") { mode = "Dot" }
+                    Button("Design a universe") { mode = "Universe" }
+                } label: {
+                    Image(systemName: "plus.circle.fill").font(.system(size: 26)).foregroundColor(.black.opacity(0.35)).frame(width: 32, height: 44)
+                }
+                .accessibilityLabel("Chat or design")
+
+                TextField(mode == "Chat" ? "Message Dots" : "Describe your \(mode.lowercased())…", text: $draft, axis: .vertical)
+                    .focused($inputFocused)
+                    .font(.system(size: 16))
+                    .tint(Self.blue)
+                    .lineLimit(1...6)
+                    .padding(.vertical, 12)
+
+                if inputFocused {
+                    Button { inputFocused = false } label: {
+                        Image(systemName: "keyboard.chevron.compact.down")
+                            .font(.system(size: 17, weight: .medium)).foregroundColor(.black.opacity(0.45)).frame(width: 36, height: 44)
+                    }.buttonStyle(.plain).accessibilityLabel("Hide keyboard")
+                } else {
+                    Button { showVoice = true } label: {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 17, weight: .medium)).foregroundColor(.black.opacity(0.45)).frame(width: 36, height: 44)
+                    }.buttonStyle(.plain).accessibilityLabel("Start voice conversation")
+                }
+
+                Button(action: send) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(canSend ? .white : .black.opacity(0.35))
+                        .frame(width: 38, height: 38)
+                        .background(canSend ? Self.blue : Color.black.opacity(0.08), in: Circle())
+                }
+                .buttonStyle(.plain).disabled(!canSend).frame(height: 44).accessibilityLabel("Send message")
+            }
+            .padding(.horizontal, 10)
+            .background(Self.field, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(inputFocused ? Self.blue.opacity(0.55) : Color.black.opacity(0.08), lineWidth: inputFocused ? 1.5 : 1))
+            .padding(.horizontal, 14)
+        }
+        .padding(.top, 6)
+        .padding(.bottom, inputFocused ? 10 : GameHubView.homeIndicatorInset + 10)
+        .animation(.easeOut(duration: 0.16), value: inputFocused)
+    }
+
+    // MARK: - History
+
+    private var historySections: [(title: String, threads: [SpacesAIThread])] {
+        let query = historySearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let filtered = store.threads.filter { !$0.messages.isEmpty && (query.isEmpty || $0.title.lowercased().contains(query)) }
+            .sorted { $0.updatedAt > $1.updatedAt }
+        let calendar = Calendar.current
+        var buckets: [(title: String, threads: [SpacesAIThread])] = [("Today", []), ("Yesterday", []), ("Previous 7 days", []), ("Earlier", [])]
+        for thread in filtered {
+            let date = Date(timeIntervalSince1970: thread.updatedAt / 1000)
+            let index: Int
+            if calendar.isDateInToday(date) { index = 0 }
+            else if calendar.isDateInYesterday(date) { index = 1 }
+            else if let days = calendar.dateComponents([.day], from: date, to: Date()).day, days < 7 { index = 2 }
+            else { index = 3 }
+            buckets[index].threads.append(thread)
+        }
+        return buckets.filter { !$0.threads.isEmpty }
+    }
+
+    private var historyScreen: some View {
+        let sections = historySections
+        return VStack(spacing: 0) {
+            Color.clear.frame(height: GameHubView.bannerTopInset + 46)
+            HStack {
+                iconButton("chevron.left", label: "Close conversations") { showHistory = false }
+                Spacer()
+                iconButton("square.and.pencil", label: "New conversation") { newConversation() }
+            }.padding(.horizontal, 16).padding(.vertical, 6)
+
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Conversations").font(.system(size: 32, weight: .bold))
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .semibold)).foregroundColor(.black.opacity(0.45))
+                    TextField("Search conversations", text: $historySearch)
+                        .font(.system(size: 15, weight: .medium)).autocorrectionDisabled().submitLabel(.search)
+                    if !historySearch.isEmpty {
+                        Button { historySearch = "" } label: { Image(systemName: "xmark.circle.fill").foregroundColor(.black.opacity(0.4)) }.buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 14).frame(height: 44).background(Color.black.opacity(0.06), in: Capsule())
+            }.padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 12)
+
+            if sections.isEmpty {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "bubble.left.and.bubble.right").font(.system(size: 22)).foregroundColor(.black.opacity(0.45))
+                        .frame(width: 60, height: 60).background(Color.black.opacity(0.06), in: Circle())
+                    Text(historySearch.isEmpty ? "No conversations yet" : "No matching conversations").font(.system(size: 16, weight: .semibold))
+                    Text(historySearch.isEmpty ? "Start a new one and it will show up here." : "Try a different word.")
+                        .font(.system(size: 13)).foregroundColor(.black.opacity(0.5))
+                    Spacer(); Spacer()
+                }.frame(maxWidth: .infinity)
+            } else {
+                List {
+                    ForEach(sections, id: \.title) { section in
+                        Section(header: Text(section.title).font(.system(size: 13, weight: .bold)).foregroundColor(.black.opacity(0.5))) {
+                            ForEach(section.threads) { thread in
+                                Button {
+                                    activeThreadID = thread.id; showHistory = false
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(thread.title).font(.system(size: 15, weight: .semibold)).foregroundColor(.black).lineLimit(1)
+                                        Text(thread.messages.last?.text ?? "").font(.system(size: 13)).foregroundColor(.black.opacity(0.5)).lineLimit(1)
+                                    }
+                                }
+                                .swipeActions { Button(role: .destructive) {
+                                    store.delete(thread.id); if activeThreadID == thread.id { activeThreadID = nil }
+                                } label: { Label("Delete", systemImage: "trash") } }
+                            }
+                        }
+                    }
+                }.listStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.white)
+    }
+
+    // MARK: - Sending
+
+    private func newConversation() {
+        activeThreadID = nil; showHistory = false; draft = ""; errorMessage = nil
+        generatedDot = nil; generatedUniverse = nil; mode = "Chat"
     }
 
     private func send() {
@@ -192,32 +361,70 @@ struct SpacechatAIView: View {
         guard canSend else { return }
         draft = ""
         errorMessage = nil
-        turns.append(Turn(text: text, fromAI: false))
+        let thread = store.thread(activeThreadID) ?? store.create()
+        activeThreadID = thread.id
+        store.append(thread.id, role: "user", text: text)
         isThinking = true
         let account = authState.spacechatUsername
         let requestedMode = mode
+        let history = store.history(thread.id)
         Task {
             defer { isThinking = false }
             do {
                 let prompt = requestedMode == "Chat" ? text : creationPrompt(text, mode: requestedMode)
-                let reply = try await SpacechatService.askSpacechatAI(prompt)
+                let reply = try await SpacechatService.askSpacechatAI(prompt, history: requestedMode == "Chat" ? history : [])
                 guard account == authState.spacechatUsername else { return }
-                if requestedMode == "Chat" { turns.append(Turn(text: reply, fromAI: true)) }
-                else {
+                if requestedMode == "Chat" {
+                    store.append(thread.id, role: "assistant", text: reply)
+                } else {
                     let design = try SpacesGeneratedDesign.parse(reply)
                     if requestedMode == "Dot" { generatedDot = try design.dot(); generatedUniverse = nil }
                     else { generatedUniverse = try design.universe(); generatedDot = nil }
                     savedDesignID = nil
-                    turns.append(Turn(text: "Your design is ready. Preview it below, then save and equip it when you're happy with it.", fromAI: true))
+                    store.append(thread.id, role: "assistant", text: "Your design is ready. Preview it below, then save and equip it when you're happy with it.")
                 }
             } catch {
                 guard account == authState.spacechatUsername else { return }
                 draft = text
-                errorMessage = (error as? LocalizedError)?.errorDescription
-                    ?? "Spacechat AI is unavailable right now."
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? "Dots couldn't answer that. Please try again."
             }
-            isThinking = false
         }
+    }
+
+    /// A spoken turn: same thread as typing, returns the reply so it is read aloud.
+    private func sendVoiceTurn(_ text: String) async -> String {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return "" }
+        let thread = store.thread(activeThreadID) ?? store.create()
+        activeThreadID = thread.id
+        store.append(thread.id, role: "user", text: clean)
+        let reply: String
+        do {
+            reply = try await SpacechatService.askSpacechatAI(clean, voice: true, history: store.history(thread.id))
+        } catch {
+            reply = (error as? LocalizedError)?.errorDescription ?? "I couldn't reach Spacechat just now. Try again in a moment."
+        }
+        store.append(thread.id, role: "assistant", text: reply)
+        return reply
+    }
+}
+
+/// Dots, the one agent on this page: a blue dot with eyes.
+struct DotsAgentAvatar: View {
+    var size: CGFloat = 32
+    var body: some View { AgentAvatar(id: "builtin-dots", hue: 0.60, size: size) }
+}
+
+private struct TypingDots: View {
+    @State private var phase = 0
+    private let timer = Timer.publish(every: 0.35, on: .main, in: .common).autoconnect()
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(0..<3, id: \.self) { i in
+                Circle().fill(Color.black.opacity(phase == i ? 0.55 : 0.2)).frame(width: 6, height: 6)
+            }
+        }
+        .onReceive(timer) { _ in phase = (phase + 1) % 3 }
     }
 }
 

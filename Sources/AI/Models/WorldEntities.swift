@@ -39,6 +39,35 @@ struct RivalDot: Identifiable {
     /// (§ new — "add names under the dots... all unique names"), generated
     /// once per rival at spawn time via `NameGenerator`.
     let username: String
+    /// The last thing this player typed in chat, shown above its head for a
+    /// few seconds.
+    var lastMessage: String? = nil
+    var lastMessageAt: Date? = nil
+    /// How this player is playing right now. Chosen by the player's
+    /// character, and re-decided every so often from what is around it.
+    var style: AgentStyle = .hunt
+    var aggression: Double = 0.5
+}
+
+/// A player's approach to the match, decided slowly (every ~15 seconds),
+/// never per frame: the engine only reads it while it moves them.
+enum AgentStyle: String {
+    /// Chase the dots it can eat (in the arena the smaller dot eats the bigger one).
+    case hunt
+    /// Keep away from the dots that can eat it.
+    case flee
+    /// Just eat food.
+    case farm
+    /// Wait, then strike when something eatable comes close.
+    case ambush
+}
+
+/// One line in the match chat.
+struct ChatLine: Identifiable, Equatable {
+    let id = UUID()
+    let name: String
+    let text: String
+    let at = Date()
 }
 
 /// Generates short, unique "davi_32"-style handles (§ new — names shown
@@ -113,7 +142,7 @@ struct AbsorbEffect: Identifiable {
     var magnitude: CGFloat = 13
     let startedAt: Date = Date()
 
-    static let duration: Double = 0.5
+    static let duration: Double = 0.6
 }
 
 /// Neutral food in the second universe; never changes the player's form.

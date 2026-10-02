@@ -9,20 +9,23 @@ import UIKit
 /// one place is what makes §82's rule ("is the player still obviously a dot?")
 /// easy to hold onto as more visual states get added later.
 enum DotRenderer {
+    /// A small 3D ball: bright tinted face, saturated deep edge and a bold
+    /// border in the dot's own deeper colour. Used for everything that isn't
+    /// the player (pellets, wanderers, trail) so the whole world shares the
+    /// player's look. No glow, no shadow.
     static func draw(_ context: GraphicsContext, center: CGPoint, radius: CGFloat, color: Color, ringColor: Color? = nil, ringWidth: CGFloat = 0) {
+        guard radius > 0.2 else { return }
         let rect = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
         let path = Path(ellipseIn: rect)
-        context.fill(path, with: .color(color))
-
-        // Soft sunlight-style highlight, top-right — same light direction as the app icon.
-        let highlightCenter = CGPoint(x: center.x + radius * 0.35, y: center.y - radius * 0.35)
-        let highlightRadius = radius * 0.5
-        let highlightRect = CGRect(x: highlightCenter.x - highlightRadius, y: highlightCenter.y - highlightRadius,
-                                    width: highlightRadius * 2, height: highlightRadius * 2)
-        var highlightContext = context
-        highlightContext.opacity = 0.35
-        highlightContext.fill(Path(ellipseIn: highlightRect), with: .color(.white))
-
+        let focus = CGPoint(x: center.x - radius * 0.3, y: center.y - radius * 0.34)
+        context.fill(path, with: .radialGradient(
+            Gradient(colors: [color.lifted(0.38), color, color.deepened(0.78)]),
+            center: focus, startRadius: 0, endRadius: radius * 1.35))
+        context.stroke(path, with: .color(color.deepened(0.6)), lineWidth: max(1, radius * 0.1))
+        // One small catch-light keeps it reading as a ball.
+        let hl = radius * 0.2
+        context.fill(Path(ellipseIn: CGRect(x: center.x - radius * 0.36 - hl, y: center.y - radius * 0.4 - hl, width: hl * 2, height: hl * 1.5)),
+                     with: .color(.white.opacity(0.75)))
         if let ringColor, ringWidth > 0 {
             context.stroke(path, with: .color(ringColor), lineWidth: ringWidth)
         }
@@ -82,7 +85,7 @@ enum DotRenderer {
             // effect at rest — just fades out as real motion takes over —
             // and amplitude itself is a touch calmer than before too.
             let taper = 1 - shapeStretch * 0.75
-            return CGFloat((sin(time * freqA + phase) * 0.07 + sin(time * freqB + phase * 1.7) * 0.035) * taper)
+            return CGFloat((sin(time * freqA + phase) * 0.018 + sin(time * freqB + phase * 1.7) * 0.01) * taper)
         }
         let frontWobble = wobble(1.1, 2.6, 0.0)
         let backWobble = wobble(0.9, 2.1, 2.1)
@@ -121,39 +124,6 @@ enum DotRenderer {
         let styledColor = visual.mixAmount > 0 ? baseColor.mix(with: effectiveAccent, amount: visual.mixAmount) : baseColor
         let styleShine = visual.shine
 
-        // A bloom behind the dot, but ONLY while it is actually eating
-        // (§ new — "the dots has a background behind them something like
-        // shadows, it's so annoying").
-        //
-        // This used to burn at a constant floor plus a shine bonus, so every
-        // dot sat on a permanent tinted halo. Against the light menu that
-        // reads as a smudge or a drop shadow, which is exactly what it looked
-        // like. Scaling it purely by `pulse` means it is completely absent at
-        // rest — the menu preview, every picker swatch, an idle dot in the
-        // universe — and only blooms on the bite, where it is feedback rather
-        // than decoration.
-        if pulse > 0.01 {
-            let outerRadius = radius * (1.9 + 0.45 * pulse + 0.6 * styleShine)
-            var outerGlow = context
-            outerGlow.opacity = 0.22 * pulse
-            outerGlow.addFilter(.blur(radius: radius * 0.85))
-            outerGlow.fill(
-                Path(ellipseIn: CGRect(x: center.x - outerRadius, y: center.y - outerRadius,
-                                        width: outerRadius * 2, height: outerRadius * 2)),
-                with: .color(styledColor)
-            )
-
-            let innerRadius = radius * (1.25 + 0.2 * pulse + 0.3 * styleShine)
-            var innerGlow = context
-            innerGlow.opacity = 0.34 * pulse
-            innerGlow.addFilter(.blur(radius: radius * 0.32))
-            innerGlow.fill(
-                Path(ellipseIn: CGRect(x: center.x - innerRadius, y: center.y - innerRadius,
-                                        width: innerRadius * 2, height: innerRadius * 2)),
-                with: .color(styledColor.mix(with: .white, amount: 0.2))
-            )
-        }
-
         var bodyContext = context
         bodyContext.translateBy(x: center.x, y: center.y)
         bodyContext.rotate(by: angle)
@@ -169,7 +139,13 @@ enum DotRenderer {
         let bottom = radius * (1 - shapeStretch * 0.3 + bottomWobble)
         let tailKappa: CGFloat = 0.5523 * (1 - shapeStretch * 0.4)
 
-        let bodyPath = blobOutline(front: front, back: back, top: top, bottom: bottom, tailKappa: tailKappa)
+        // Paid dots are different shapes (star, heart, hexagon...) rather than
+        // a circle wearing items; the default and custom-art dots stay round.
+        let shape = customDot == nil ? dotStyle.shape : .circle
+        let bodyPath: Path = shape == .circle
+            ? blobOutline(front: front, back: back, top: top, bottom: bottom, tailKappa: tailKappa)
+            : DotShape.path(shape, radius: radius)
+                .applying(CGAffineTransform(scaleX: 1 + shapeStretch * 0.2, y: 1 - shapeStretch * 0.22))
 
         // A glossy radial gradient — lighter toward the sunlit corner,
         // richer/darker toward the far edge — instead of a flat fill, for a
@@ -180,10 +156,13 @@ enum DotRenderer {
         // near-white hotspot right at the light source, and an extra
         // mid-tone step before the darkest edge, instead of jumping straight
         // from the base color to black.
-        let lightShade = styledColor.mix(with: .white, amount: 0.5 + styleShine)
-        let hotspotShade = styledColor.mix(with: .white, amount: 0.75 + styleShine * 0.6)
-        let midShade = styledColor.mix(with: .black, amount: 0.08)
-        let darkShade = styledColor.mix(with: .black, amount: 0.3)
+        // Shades stay inside the dot's own hue (lighter and more saturated
+        // toward the light, deeper and richer toward the edge) rather than
+        // washing out to white or dropping to black.
+        let lightShade = styledColor.lifted(0.30 + styleShine * 0.5)
+        let hotspotShade = styledColor.lifted(0.52 + styleShine * 0.6)
+        let midShade = styledColor
+        let darkShade = styledColor.deepened(0.74)
         let gradientCenter = CGPoint(x: front * 0.32, y: -top * 0.34)
         let gradientRadius = max(front, back, top, bottom) * 1.2
         bodyContext.fill(
@@ -191,26 +170,19 @@ enum DotRenderer {
             with: .radialGradient(
                 Gradient(stops: [
                     .init(color: hotspotShade, location: 0.0),
-                    .init(color: lightShade, location: 0.22),
-                    .init(color: styledColor, location: 0.5),
-                    .init(color: midShade, location: 0.78),
+                    .init(color: lightShade, location: 0.2),
+                    .init(color: midShade, location: 0.55),
                     .init(color: darkShade, location: 1.0)
                 ]),
                 center: gradientCenter, startRadius: 0, endRadius: gradientRadius
             )
         )
 
-        // A small, subtle inner border (§ user feedback: "add a small border
-        // to the dot inside") — a thin rim just inside the body's own edge,
-        // not a halo drawn around it like the aura that got removed earlier.
-        // Clipping to the body path first and stroking at double the visible
-        // width means only the inner half of that stroke actually shows, so
-        // it reads as sitting inside the dot rather than bleeding past its
-        // silhouette.
-        let borderWidth = max(1, radius * 0.035)
-        var borderContext = bodyContext
-        borderContext.clip(to: bodyPath)
-        borderContext.stroke(bodyPath, with: .color(darkShade.opacity(0.4)), lineWidth: borderWidth * 2)
+        // A bold border in the dot's own deeper colour, only on dots: half
+        // of the stroke sits outside the silhouette so the edge stays crisp
+        // against every universe.
+        let borderWidth = max(1.6, radius * 0.1)
+        bodyContext.stroke(bodyPath, with: .color(styledColor.deepened(0.58)), style: StrokeStyle(lineWidth: borderWidth, lineJoin: .round))
 
         // A soft, blurred highlight instead of a hard-edged circle — same
         // sun-from-top-right direction as every other dot in the game — for
@@ -255,100 +227,9 @@ enum DotRenderer {
             with: .color(.white)
         )
 
-        // A crisp light-catching rim traced exactly along the body's own
-        // current silhouette — trimming the front→top curve segment, the
-        // same quarter the gradient/highlight above already treat as facing
-        // the light — instead of a hand-placed blurred ellipse, so it hugs
-        // the true outline through every squash/stretch/wobble frame.
-        let litRim = bodyPath.trimmedPath(from: 0.03, to: 0.22)
-        var litRimContext = bodyContext
-        litRimContext.opacity = 0.55 + 0.35 * pulse
-        litRimContext.addFilter(.blur(radius: max(0.4, radius * 0.025)))
-        litRimContext.stroke(litRim, with: .color(.white), style: StrokeStyle(lineWidth: max(1, radius * 0.07), lineCap: .round))
-
         // No dark shadow rim on the body (§ new — "remove the shadow
         // behind the dots"): the dot reads as a flat, bright shape lit only
         // by its own highlight.
-
-        // A slow inner sheen — a soft light band drifting back-to-front
-        // across the body every few seconds, clipped to the outline — gives
-        // the dot a "playing"/living-liquid feel even while standing
-        // perfectly still, on top of the squash/stretch ripple above.
-        // Applies to every style (Galaxy's stars, drawn next, layer on top).
-        if !reduceMotion {
-            let sweepPeriod = 3.6
-            let sweepPhase = (time.truncatingRemainder(dividingBy: sweepPeriod)) / sweepPeriod
-            let sweepOpacity = 0.10 * max(0, sin(.pi * sweepPhase))
-            if sweepOpacity > 0.003 {
-                let travel = front + back
-                let sweepX = -back + travel * CGFloat(sweepPhase) * 1.15
-                var sweepContext = bodyContext
-                sweepContext.clip(to: bodyPath)
-                sweepContext.opacity = sweepOpacity
-                sweepContext.addFilter(.blur(radius: radius * 0.3))
-                let sweepWidth = radius * 0.4
-                let sweepHeight = (top + bottom) * 1.3
-                sweepContext.fill(
-                    Path(ellipseIn: CGRect(x: sweepX - sweepWidth / 2, y: -sweepHeight / 2,
-                                            width: sweepWidth, height: sweepHeight)),
-                    with: .color(.white)
-                )
-            }
-        }
-
-        // Galaxy/Nebula's signature per §29: a few tiny twinkling stars
-        // clipped to the body outline, rather than a plain tinted fill like
-        // the other premium styles.
-        if visual.hasStars {
-            var starContext = bodyContext
-            starContext.clip(to: bodyPath)
-            let starSpots: [(CGFloat, CGFloat, Double)] = [
-                (front * 0.05, -top * 0.45, 0.0),
-                (-back * 0.35, top * 0.15, 1.3),
-                (front * 0.4, bottom * 0.35, 2.6),
-                (-back * 0.1, -top * 0.05, 4.0),
-                (front * 0.15, bottom * 0.55, 5.3)
-            ]
-            for (sx, sy, seedPhase) in starSpots {
-                let twinkle = 0.35 + 0.55 * max(0, sin(time * 2.2 + seedPhase))
-                var starDotContext = starContext
-                starDotContext.opacity = twinkle
-                let r = radius * 0.035
-                starDotContext.fill(
-                    Path(ellipseIn: CGRect(x: sx - r, y: sy - r, width: r * 2, height: r * 2)),
-                    with: .color(.white)
-                )
-            }
-        }
-
-        // Material details stay inside the actual body, so shop previews and
-        // equipped dots share the same finish without hiding the face.
-        if customDot == nil {
-            var material = bodyContext
-            material.clip(to: bodyPath)
-            let gems: [DotStyle] = [.diamond, .ruby, .emerald, .sapphire, .crystal, .amethyst, .jade]
-            let metals: [DotStyle] = [.gold, .silver, .roseGold, .platinum, .chrome]
-            if gems.contains(dotStyle) {
-                for index in 0..<7 {
-                    let theta = Double(index) * .pi * 2 / 7
-                    let next = theta + .pi * 2 / 7
-                    var facet = Path()
-                    facet.move(to: CGPoint(x: radius * 0.12, y: radius * 0.22))
-                    facet.addLine(to: CGPoint(x: cos(theta) * radius * 1.1, y: sin(theta) * radius * 1.1))
-                    facet.addLine(to: CGPoint(x: cos(next) * radius * 1.1, y: sin(next) * radius * 1.1))
-                    facet.closeSubpath()
-                    material.fill(facet, with: .color(index.isMultiple(of: 2) ? .white.opacity(0.17) : .black.opacity(0.07)))
-                }
-            } else if metals.contains(dotStyle) {
-                for index in 0..<4 {
-                    let y = radius * (0.15 + CGFloat(index) * 0.16)
-                    var band = Path()
-                    band.move(to: CGPoint(x: -radius, y: y))
-                    band.addQuadCurve(to: CGPoint(x: radius, y: y - radius * 0.35), control: CGPoint(x: 0, y: y + radius * 0.22))
-                    material.stroke(band, with: .color(.white.opacity(index == 1 ? 0.24 : 0.09)), lineWidth: radius * 0.045)
-                }
-            }
-        }
 
         // Eyes now live INSIDE the body's own rotated + stretched local frame
         // (`bodyContext`), anchored to one fixed spot near the front/top —
@@ -378,40 +259,6 @@ enum DotRenderer {
         }
 
         drawEyes(bodyContext, anchor: eyeAnchor, scale: eyeScale, lookDirection: localLook, time: time, style: eyeStyle)
-
-        // Worn over the eyes, in the same local frame, so it squashes and
-        // turns with the body instead of floating on top of it.
-        drawEyeWear(bodyContext, anchor: eyeAnchor, scale: eyeScale,
-                    kind: customDot == nil ? visual.eyeWear : .none,
-                    tint: styledColor.wornAccent(hueShift: 0.5))
-
-        // A second worn item below the hat (§ new — "more cloths": a bowtie,
-        // scarf, collar, cape, or medal per style — see `DotStyle.Accessory`)
-        // — a simple drawn vector shape rather than another SF Symbol, so it
-        // clearly reads as something worn low on the body rather than a
-        // second badge stacked on the head. Tinted with its own colour a third
-        // of the way round the wheel from the body (§ new — worn items should
-        // read as clothing, not as a shaded part of the dot), which also keeps
-        // it distinct from the hat's own accent just below.
-        drawAccessory(bodyContext, front: front, back: back, top: top, bottom: bottom,
-                      kind: customDot == nil ? visual.accessory : .none,
-                      tint: styledColor.wornAccent(hueShift: 0.34),
-                      bodyPath: bodyPath)
-
-        // A small worn accessory for premium Dot Styles (§ new — user asked
-        // for something like "wearing a hat" so a premium pick reads at a
-        // glance, not just through a tinted body): drawn last, perched right
-        // on top of the head, in the same rotated/stretched local frame as
-        // everything else above so it rides along with the body's motion.
-        // Real SF Symbols glyphs (§ user feedback: hand-drawn shapes didn't
-        // read right — "look up in the libraries", i.e. the system icon set
-        // already used elsewhere in this app, like the Store's pack icons)
-        // rather than custom vector paths, tinted with the hue opposite the
-        // body's (§ new — "make their colors different than the dots") so the
-        // hat reads as a worn object rather than part of the dot. `.classic`
-        // gets nothing.
-        drawHat(bodyContext, top: top, hatSymbol: customDot == nil ? visual.hatSymbol : nil,
-                tint: styledColor.wornAccent(hueShift: 0.5))
     }
 
     /// Paints a `CustomDot`'s strokes and stickers.
@@ -869,9 +716,12 @@ enum DotRenderer {
         return 1 - sin(.pi * phase / blinkDuration)
     }
 
+    /// The colour a fresh dot starts with: the logo blue, not near-black.
+    static let defaultColor = Color(red: 0.20, green: 0.50, blue: 1.0)
+
     /// Blends the neutral base dot color toward a form's color as progress climbs,
     /// per §5's "visual transformation" ladder (0% neutral → 100% full color).
-    static func blendedPlayerColor(base: Color = Color(white: 0.16), formColor: Color?, progress: Double) -> Color {
+    static func blendedPlayerColor(base: Color = DotRenderer.defaultColor, formColor: Color?, progress: Double) -> Color {
         guard let formColor else { return base }
         let t = min(1, max(0, progress / 100))
         return base.mix(with: formColor, amount: t)
@@ -879,6 +729,33 @@ enum DotRenderer {
 }
 
 extension Color {
+    /// Brighter and a little less saturated, staying in the same hue.
+    func lifted(_ amount: Double) -> Color {
+        #if canImport(UIKit)
+        var h: CGFloat = 0, sat: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(self).getHue(&h, saturation: &sat, brightness: &b, alpha: &a)
+        return Color(hue: Double(h), saturation: max(0, Double(sat) * (1 - amount * 0.7)),
+                     brightness: min(1, Double(b) + amount * (1 - Double(b)) + amount * 0.25), opacity: Double(a))
+        #else
+        return self
+        #endif
+    }
+
+    /// Darker and richer, staying in the same hue (never muddy grey/black).
+    /// `keep` is the share of brightness that remains (0.74 = a gentle
+    /// shade, 0.58 = a bold outline).
+    func deepened(_ keep: Double) -> Color {
+        #if canImport(UIKit)
+        var h: CGFloat = 0, sat: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(self).getHue(&h, saturation: &sat, brightness: &b, alpha: &a)
+        // Grey inputs stay grey; coloured ones get richer as they darken.
+        let richer = sat < 0.08 ? Double(sat) : min(1, Double(sat) * 1.12 + 0.1)
+        return Color(hue: Double(h), saturation: richer, brightness: max(0.12, Double(b) * keep), opacity: Double(a))
+        #else
+        return self
+        #endif
+    }
+
     /// Simple linear RGB mix — good enough for the subtle transformation blend.
     func mix(with other: Color, amount: Double) -> Color {
         let t = min(1, max(0, amount))

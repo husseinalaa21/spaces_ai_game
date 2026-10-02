@@ -31,6 +31,11 @@ final class StoreManager: ObservableObject {
     /// Settings and the About sheet can never drift apart.
     static var termsOfUseURL: URL { SpacesLinks.terms }
     static var privacyPolicyURL: URL { SpacesLinks.privacy }
+    /// Apple's standard licence agreement — the EULA this app ships under,
+    /// and the same address App Store Connect carries in the App Description.
+    /// Shown by name next to the buy button so a reviewer can find it without
+    /// having to open the game's own terms first.
+    static var eulaURL: URL { SpacesLinks.appleEULA }
 
     /// Consumable Point Packs, keyed by Product ID exactly as registered in
     /// App Store Connect, mapped to the Points each one credits.
@@ -88,6 +93,9 @@ final class StoreManager: ObservableObject {
         guard premiumProduct == nil || pointPackProducts.isEmpty else { return }
         isLoadingProduct = true
         defer { isLoadingProduct = false }
+        // A retry starts clean: without this, "Try Again" would keep showing
+        // the failure it is trying to recover from even after it succeeds.
+        errorMessage = nil
         do {
             let ids = Set([StoreManager.premiumProductID]).union(StoreManager.pointPackGrants.keys)
             let products = try await Product.products(for: ids)
@@ -237,18 +245,42 @@ final class StoreManager: ObservableObject {
     /// and a Guideline 3.1.2 mismatch if the App Store Connect price changes.
     var displayPrice: String { premiumProduct?.displayPrice ?? "" }
 
+    /// The subscription's own title as App Store Connect localizes it, which
+    /// is what Guideline 3.1.2(c) means by "title of auto-renewing
+    /// subscription". Falls back to the product's reference name until the
+    /// product has loaded.
+    var premiumTitle: String { premiumProduct?.displayName ?? "Premium" }
+
+    private var periodUnit: String {
+        guard let period = premiumProduct?.subscription?.subscriptionPeriod else { return "" }
+        switch period.unit {
+        case .day: return "day"
+        case .week: return "week"
+        case .month: return "month"
+        case .year: return "year"
+        @unknown default: return "period"
+        }
+    }
+
     /// e.g. "month" / "year", taken from the subscription period.
     var periodLabel: String {
         guard let period = premiumProduct?.subscription?.subscriptionPeriod else { return "" }
-        let unit: String
-        switch period.unit {
-        case .day: unit = "day"
-        case .week: unit = "week"
-        case .month: unit = "month"
-        case .year: unit = "year"
-        @unknown default: unit = "period"
-        }
-        return period.value > 1 ? "\(period.value) \(unit)s" : unit
+        return period.value > 1 ? "\(period.value) \(periodUnit)s" : periodUnit
+    }
+
+    /// The length of one billing period spelled out — "1 month" — for the
+    /// "Length of subscription" line Guideline 3.1.2(c) requires. Unlike
+    /// `periodLabel` it always carries the count.
+    var lengthLabel: String {
+        guard let period = premiumProduct?.subscription?.subscriptionPeriod else { return "" }
+        return "\(period.value) \(periodUnit)\(period.value > 1 ? "s" : "")"
+    }
+
+    /// e.g. "$9.99 per month" — price and unit together, straight from the
+    /// product so it is always the App Store Connect price for this storefront.
+    var priceSummary: String {
+        guard premiumProduct != nil, !periodLabel.isEmpty else { return "" }
+        return "\(displayPrice) per \(periodLabel)"
     }
 
     /// Full button label, e.g. "Subscribe — $9.99/month".
@@ -263,6 +295,6 @@ final class StoreManager: ObservableObject {
         guard premiumProduct != nil, !periodLabel.isEmpty else {
             return "Payment is charged to your Apple Account. Subscriptions renew automatically until cancelled in Settings."
         }
-        return "\(displayPrice) per \(periodLabel), charged to your Apple Account. Renews automatically until cancelled at least 24 hours before the end of the current period. Manage or cancel in Settings."
+        return "\(displayPrice) per \(periodLabel), charged to your Apple Account at confirmation of purchase. The subscription renews automatically for the same price and length unless it is cancelled at least 24 hours before the end of the current period, and your account is charged for renewal within 24 hours before that period ends. Manage or cancel any time in your Apple Account settings."
     }
 }

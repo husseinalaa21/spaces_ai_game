@@ -25,7 +25,7 @@ struct OnboardingView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                Color.black.ignoresSafeArea()
+                WarpBackdrop()
 
                 FallingDot(width: geo.size.width, height: geo.size.height)
 
@@ -95,7 +95,7 @@ struct LevelTransitionView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                Color.black.ignoresSafeArea()
+                WarpBackdrop()
 
                 FallingDot(width: geo.size.width, height: geo.size.height)
 
@@ -193,11 +193,16 @@ private struct FallingDot: View {
         let settleElapsed = elapsed - fallDuration - bounceDuration
         let idle = settleElapsed > 0 ? 1 + 0.04 * sin(settleElapsed * 2.2) : 1
 
-        return Circle()
-            .fill(Color.white)
-            .frame(width: 64, height: 64)
-            .scaleEffect(x: CGFloat(squashX * idle), y: CGFloat(stretchY * idle), anchor: .bottom)
-            .shadow(color: .white.opacity(0.35), radius: 26)
-            .position(x: width / 2, y: CGFloat(y))
+        let radius: CGFloat = 34 * CGFloat(idle)
+        let squash = elapsed > fallDuration ? CGFloat(squashX - 1) : 0
+        return Canvas { ctx, _ in
+            // Falling is travel straight down: stretch along the vertical, the
+            // tail trailing up. Landing squashes it wide and flat once.
+            DotRenderer.drawPlayer(ctx, center: CGPoint(x: width / 2, y: CGFloat(y)), radius: radius * (1 + squash * 0.6),
+                                   color: DotRenderer.defaultColor, stretch: CGFloat(max(0, stretchY - 1) * 2.4),
+                                   angle: .degrees(90), lookDirection: CGVector(dx: 0, dy: 0.7), time: elapsed,
+                                   eyeStyle: .whiteOnly, reduceMotion: false)
+        }
+        .allowsHitTesting(false)
     }
 }

@@ -51,6 +51,8 @@ struct MainMenuView: View {
     /// changes the call site's argument labels.
     @ObservedObject var store: StoreManager
     var save: () -> Void = {}
+    /// Opens the login page from the "Log in" button under Play.
+    var onLogin: () -> Void = {}
     let onPlay: () -> Void
 
     /// Written out explicitly rather than relying on the synthesized
@@ -66,12 +68,14 @@ struct MainMenuView: View {
          sync: SpacechatSync,
          store: StoreManager,
          save: @escaping () -> Void = {},
+         onLogin: @escaping () -> Void = {},
          onPlay: @escaping () -> Void) {
         self.player = player
         self.authState = authState
         self.sync = sync
         self.store = store
         self.save = save
+        self.onLogin = onLogin
         self.onPlay = onPlay
     }
 
@@ -102,7 +106,10 @@ struct MainMenuView: View {
 
             GeometryReader { geometry in
                 ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 18) {
+            // A touch tighter while the Log in button is showing: Play already
+            // sits at the bottom of the tallest phones, so the button under it
+            // needs its room found elsewhere.
+            VStack(spacing: authState.isGuest ? 15 : 18) {
                 Spacer()
 
                 // No more "Spaces" wordmark above the preview (§ user
@@ -207,7 +214,14 @@ struct MainMenuView: View {
                 .clipShape(Capsule())
                 .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
                 .buttonStyle(PressableButtonStyle())
-                .padding(.bottom, 40)
+                .padding(.bottom, authState.isGuest ? 8 : 40)
+
+                // Under Play, while playing as a guest: opens the login page.
+                // Gone once there is an account to be signed in to.
+                if authState.isGuest {
+                    LogInButton(action: onLogin)
+                        .padding(.bottom, 16)
+                }
             }
             .frame(maxWidth: .infinity, minHeight: max(0, geometry.size.height - GameHubView.bannerTopInset - 112 - GameHubView.homeIndicatorInset))
                 }
@@ -1009,13 +1023,17 @@ struct PremiumUnlockSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        // Scrolls so the title, length, price, disclosure and links all stay
+        // reachable on a small phone or at a large Dynamic Type size, rather
+        // than being clipped by the sheet's height.
+        ScrollView {
         VStack(spacing: 16) {
             Capsule()
                 .fill(Color.black.opacity(0.15))
                 .frame(width: 36, height: 4)
                 .padding(.top, 10)
 
-            Text("Premium")
+            Text(store.premiumTitle)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
 
             Text("Unlocks every Universe look and every Dot Style — cosmetic only, never a gameplay advantage.")
@@ -1032,6 +1050,13 @@ struct PremiumUnlockSheet: View {
             } else if store.isLoadingProduct {
                 ProgressView().padding(.top, 16)
             } else {
+                // Title, length and price as plain rows above the button,
+                // not only inside the button label and fine print.
+                if store.premiumProduct != nil {
+                    SubscriptionSummaryView(store: store)
+                        .padding(.horizontal, 28)
+                }
+
                 Button(action: buy) {
                     Group {
                         if store.purchaseInFlight {
@@ -1053,10 +1078,17 @@ struct PremiumUnlockSheet: View {
                 // Required disclosure — price, period and auto-renewal, in
                 // plain text right next to the buy button.
                 Text(store.renewalDisclosure)
-                    .font(.system(size: 11))
-                    .foregroundColor(.black.opacity(0.45))
+                    .font(.system(size: 12))
+                    .foregroundColor(.black.opacity(0.55))
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 28)
+
+                if store.premiumProduct == nil {
+                    Button("Try Again") { Task { await store.loadProduct() } }
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.black.opacity(0.7))
+                }
             }
 
             if let message = store.errorMessage {
@@ -1074,22 +1106,16 @@ struct PremiumUnlockSheet: View {
             }
             .disabled(store.restoreInFlight)
 
-            HStack(spacing: 14) {
-                Link("Terms of Use", destination: StoreManager.termsOfUseURL)
-                Text("·").foregroundColor(.black.opacity(0.3))
-                Link("Privacy Policy", destination: StoreManager.privacyPolicyURL)
-            }
-            .font(.system(size: 11))
-            .foregroundColor(.black.opacity(0.45))
+            SubscriptionLegalLinks()
 
             Button("Not Now") { dismiss() }
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.black.opacity(0.5))
                 .padding(.bottom, 12)
-
-            Spacer(minLength: 0)
         }
-        .presentationDetents([.fraction(0.72)])
+        .frame(maxWidth: .infinity)
+        }
+        .presentationDetents([.fraction(0.85), .large])
         .task { await store.loadProduct() }
         .sheet(isPresented: $showSignInGate) { SignInRequiredSheet(authState: authState) }
     }
@@ -1413,7 +1439,7 @@ private struct StoreView: View {
                 .foregroundColor(.black.opacity(0.45))
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("Premium").font(.system(size: 18, weight: .bold, design: .rounded))
+                Text(store.premiumTitle).font(.system(size: 18, weight: .bold, design: .rounded))
                 Text("Unlocks every Universe look and every Dot Style — cosmetic only, never a gameplay advantage.")
                     .font(.system(size: 13))
                     .foregroundColor(.black.opacity(0.6))
@@ -1423,6 +1449,10 @@ private struct StoreView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.green)
                 } else {
+                    if store.premiumProduct != nil {
+                        SubscriptionSummaryView(store: store)
+                    }
+
                     Button(action: unlockPremium) {
                         HStack {
                             if store.purchaseInFlight {
@@ -1444,8 +1474,9 @@ private struct StoreView: View {
                     // Guideline 3.1.2 disclosure, shown wherever the
                     // subscription can be bought.
                     Text(store.renewalDisclosure)
-                        .font(.system(size: 11))
-                        .foregroundColor(.black.opacity(0.45))
+                        .font(.system(size: 12))
+                        .foregroundColor(.black.opacity(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
 
                 }
 
@@ -1455,15 +1486,14 @@ private struct StoreView: View {
                         .foregroundColor(.red.opacity(0.8))
                 }
 
-                HStack(spacing: 14) {
+                VStack(spacing: 10) {
                     Button(store.restoreInFlight ? "Restoring…" : "Restore Purchases", action: restore)
                         .disabled(store.restoreInFlight)
-                    Spacer()
-                    Link("Terms", destination: StoreManager.termsOfUseURL)
-                    Link("Privacy", destination: StoreManager.privacyPolicyURL)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.black.opacity(0.55))
+                    SubscriptionLegalLinks()
                 }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.black.opacity(0.55))
+                .frame(maxWidth: .infinity)
                 .padding(.top, 2)
             }
             .padding(16)

@@ -66,7 +66,15 @@ struct WhiteSpaceView: View {
     /// Called instead of `onQuit` when a `.practice`-mode round's short timer
     /// runs out (§ new two-phase Play flow) — `RootView` uses this to start
     /// the real `.final` round rather than sending the player back to the menu.
+    /// The person playing wrote something in the match chat.
+    var onChat: (String) -> Void = { _ in }
     var onRoundComplete: () -> Void = {}
+    @State private var chatOpen = false
+    @State private var chatDraft = ""
+    @FocusState private var chatFocused: Bool
+    @ObservedObject private var friends = FriendsStore.shared
+    /// The player whose card is open after tapping their dot.
+    @State private var selectedName: String? = nil
     @State private var dragStart: CGPoint? = nil
     @State private var lastTick: Date = Date()
     @State private var showingCollection = false
@@ -110,6 +118,12 @@ struct WhiteSpaceView: View {
     // timer, since the button only needs to breathe, not track exact time.
     @State private var abilityPulseOn = false
 
+    // Arrival animation: the world starts slightly zoomed in, the dot is held
+    // small until the window opens, then everything settles.
+    @State private var entryZoom: CGFloat = 1.22
+    @State private var showEntry = true
+    @State private var dotArmed = false
+
     var body: some View {
         GeometryReader { geo in
             let screenSize = geo.size
@@ -120,7 +134,7 @@ struct WhiteSpaceView: View {
                 .onChange(of: timeline.date) { newDate in
                     let dt = newDate.timeIntervalSince(lastTick)
                     lastTick = newDate
-                    engine.tick(dt: dt)
+                    if dotArmed { engine.tick(dt: dt) }
                     updateStretch(dt: dt)
                     updateLook(dt: dt)
                     updateGrowth(dt: dt)
@@ -128,14 +142,9 @@ struct WhiteSpaceView: View {
                 }
             }
             .background(currentPalette.background)
+            .scaleEffect(entryZoom)
             .contentShape(Rectangle())
             .gesture(dragGesture(screenSize: screenSize))
-            // Particle bursts sit above the game canvas but below the HUD, so
-            // sparks never cover the score or the quit button.
-            .overlay {
-                DotEffectsLayer(engine: engine, player: player, screenSize: screenSize)
-            }
-            .overlay(alignment: .top) { hud }
             .overlay(alignment: .topLeading) { quitButton }
             .overlay(alignment: .topTrailing) { minimap }
             .overlay(alignment: .bottom) { timerBadge }
@@ -146,6 +155,15 @@ struct WhiteSpaceView: View {
             .overlay { eliminatedOverlay }
             .overlay(alignment: .top) { signalBanner }
             .overlay(alignment: .top) { comboBanner }
+            .overlay(alignment: .topLeading) { chatFeed }
+            .overlay(alignment: .bottom) { playerCard }
+            .overlay {
+                if showEntry {
+                    UniverseEntryOverlay(title: entryTitle, caption: engine.roundMode == .final ? "Bigger dots eat smaller ones" : "Eat to grow",
+                                         color: entryColor, accent: entryAccent) { showEntry = false }
+                        .transition(.opacity)
+                }
+            }
         }
         .ignoresSafeArea()
         .sheet(isPresented: $showingCollection) {
@@ -157,7 +175,12 @@ struct WhiteSpaceView: View {
         .onChange(of: engine.roundExpired) { expired in
             if expired && engine.roundMode == .practice { onRoundComplete() }
         }
-        .onAppear { AudioManager.shared.startMusic("ambient") }
+        .onAppear {
+            AudioManager.shared.startMusic("ambient")
+            entryZoom = 1.22; showEntry = true; dotArmed = false
+            withAnimation(.easeOut(duration: 1.5).delay(UniverseEntryOverlay.holdTime - 0.1)) { entryZoom = 1 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + UniverseEntryOverlay.holdTime + 0.05) { dotArmed = true }
+        }
         .onDisappear { AudioManager.shared.stopMusic() }
     }
 
@@ -172,6 +195,18 @@ struct WhiteSpaceView: View {
             return custom.palette
         }
         return engine.roundMode == .final ? WorldBackground.finalUniverse : WorldBackground.palette(for: player.profile.selectedUniverse)
+    }
+
+    private var entryTitle: String {
+        if engine.roundMode == .final { return "The Arena" }
+        if let custom = player.profile.customUniverses.first(where: { $0.id == player.profile.selectedCustomUniverseID }) { return custom.name }
+        return player.profile.selectedUniverse.displayName + " Universe"
+    }
+    private var entryColor: Color {
+        engine.roundMode == .final ? Color(red: 0.16, green: 0.12, blue: 0.55) : Color(red: 0.12, green: 0.38, blue: 0.95)
+    }
+    private var entryAccent: Color {
+        engine.roundMode == .final ? Color(red: 0.55, green: 0.32, blue: 0.95) : Color(red: 0.40, green: 0.78, blue: 1.0)
     }
 
     // MARK: - Drawing
@@ -229,6 +264,18 @@ struct WhiteSpaceView: View {
                                     eyeStyle: .whiteOnly, reduceMotion: player.profile.reduceMotion,
                                     dotStyle: .classic)
             drawNameLabel(context, name: rival.username, at: p, belowRadius: rival.radius)
+            if let said = rival.lastMessage, let at = rival.lastMessageAt, t - at.timeIntervalSinceReferenceDate < 6 {
+                let age = t - at.timeIntervalSinceReferenceDate
+                var speech = context
+                speech.opacity = min(1, max(0, (6 - age) / 1.2))
+                let font = Font.system(size: 12, weight: .heavy, design: .rounded)
+                let half = CGFloat(said.count) * 3.7 + 8
+                let spot = CGPoint(x: min(max(p.x, half), screenSize.width - half), y: p.y - rival.radius - 16)
+                for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+                    speech.draw(Text(said).font(font).foregroundColor(.black.opacity(0.55)), at: CGPoint(x: spot.x + dx, y: spot.y + dy))
+                }
+                speech.draw(Text(said).font(font).foregroundColor(.white), at: spot)
+            }
         }
 
         // Signal marker.
@@ -252,8 +299,9 @@ struct WhiteSpaceView: View {
         for dot in engine.growthDots {
             let p = toScreen(dot.position)
             guard isOnScreen(p, size: screenSize, margin: 8) else { continue }
-            context.fill(Path(ellipseIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)),
-                         with: .color(Color(red: 0.30, green: 0.59, blue: 1)))
+            let hue = abs(sin(Double(dot.position.x) * 0.0173 + Double(dot.position.y) * 0.0291))
+            let pellet = Color(hue: 0.02 + hue * 0.86, saturation: 0.82, brightness: 1.0)
+            DotRenderer.draw(context, center: p, radius: 5.5, color: pellet)
         }
         for c in engine.collectibles {
             let p = toScreen(c.position)
@@ -277,164 +325,28 @@ struct WhiteSpaceView: View {
             var popContext = context
             popContext.opacity = popOpacity
 
-            // A soft blurred glow behind rare+ items — bigger and breathier
-            // than the flat backing circle every collectible gets, so rarity
-            // reads as "glowing" rather than just "slightly bigger dot".
-            // Still no ring/border/outline anywhere.
-            if isRare {
-                var glowContext = popContext
-                glowContext.opacity = popOpacity * 0.5
-                glowContext.addFilter(.blur(radius: radius * 0.9))
-                let glowRadius = radius * 2.2 * pulse * CGFloat(popScale)
-                glowContext.fill(
-                    Path(ellipseIn: CGRect(x: bobbedP.x - glowRadius, y: bobbedP.y - glowRadius,
-                                            width: glowRadius * 2, height: glowRadius * 2)),
-                    with: .color(c.definition.primaryColor.color)
-                )
-            }
-
-            // No ring/border — every collectible is a plain dot (rarity still
-            // reads through color, glow, and the rare+ pulse, not an outline).
-            DotRenderer.draw(popContext, center: bobbedP, radius: radius * pulse * CGFloat(popScale),
-                              color: c.definition.primaryColor.color.opacity(0.18))
-
             var textContext = popContext
             textContext.translateBy(x: bobbedP.x, y: bobbedP.y)
             textContext.rotate(by: wiggleAngle)
-            textContext.draw(Text(c.definition.icon).font(.system(size: CGFloat(16 * popScale))), at: .zero)
+            textContext.draw(Text(c.definition.icon).font(.system(size: CGFloat(22 * popScale))), at: .zero)
 
-            // Epic+ items get a couple of tiny sparkles orbiting the icon —
-            // one more visible step up from "rare" (which only gets the
-            // glow above), so the top rarity tiers read as distinctly more
-            // special the higher they go, still with zero rings/outlines.
-            if c.definition.rarity >= .epic, !player.profile.reduceMotion {
-                let sparkleCount = c.definition.rarity >= .mythic ? 4 : (c.definition.rarity >= .legendary ? 3 : 2)
-                let orbitRadius = radius * 2.0 * CGFloat(popScale)
-                var sparkleContext = popContext
-                sparkleContext.addFilter(.blur(radius: 0.6))
-                for i in 0..<sparkleCount {
-                    let orbitAngle = idleT * 1.6 + seed * 3 + (Double(i) / Double(sparkleCount)) * 2 * .pi
-                    let sparklePoint = CGPoint(
-                        x: bobbedP.x + CGFloat(cos(orbitAngle)) * orbitRadius,
-                        y: bobbedP.y + CGFloat(sin(orbitAngle)) * orbitRadius * 0.7
-                    )
-                    let twinkle = 0.4 + 0.6 * max(0, sin(idleT * 3 + Double(i) * 1.7 + seed))
-                    var starContext = sparkleContext
-                    starContext.opacity = popOpacity * twinkle
-                    let starRadius: CGFloat = 1.6
-                    starContext.fill(
-                        Path(ellipseIn: CGRect(x: sparklePoint.x - starRadius, y: sparklePoint.y - starRadius,
-                                                width: starRadius * 2, height: starRadius * 2)),
-                        with: .color(.white)
-                    )
-                }
-            }
         }
 
-        // Absorb "liquid" effects — the eaten collectible's color flows from
-        // where it was eaten toward the (moving) player as a stretched
-        // droplet with a short trailing stream behind it, rounding out into
-        // a plain drop and bursting into a ripple right as it merges in.
-        // Drawn before the player/aura so the merge reads as flowing *into*
-        // the dot, and feeds a brief color flash onto the player on arrival
-        // (below) so eating something visibly "adds" that color and power.
-        var arrivalFlashColor: Color? = nil
+        // Eating: what was eaten is drawn as a gooey blob joined to the dot
+        // by a stretching neck, shrinking until the dot swallows it
+        // (`MergeEffect`). The dot itself pops through `displaySize`.
+        let playerScreenForMerge = toScreen(player.position)
+        let playerBaseColor = engine.roundMode == .final
+            ? (player.activeForm?.primaryColor.color ?? DotRenderer.defaultColor)
+            : DotRenderer.blendedPlayerColor(formColor: player.activeForm?.primaryColor.color, progress: player.activeFormProgress)
         var arrivalFlashAmount: Double = 0
-
         for effect in engine.absorbEffects {
-            let elapsed = Date().timeIntervalSince(effect.startedAt)
-            let progress = min(1, max(0, elapsed / AbsorbEffect.duration))
-
-            func worldPosition(atProgress p: Double) -> CGPoint {
-                let eased = 1 - pow(1 - p, 3)
-                return CGPoint(
-                    x: effect.startPosition.x + (player.position.x - effect.startPosition.x) * CGFloat(eased),
-                    y: effect.startPosition.y + (player.position.y - effect.startPosition.y) * CGFloat(eased)
-                )
-            }
-
-            let dx = Double(player.position.x - effect.startPosition.x)
-            let dy = Double(player.position.y - effect.startPosition.y)
-            let travelAngle = Angle(radians: dx == 0 && dy == 0 ? 0 : atan2(dy, dx))
-            let fade = 1 - pow(progress, 4)
-
-            // Speed along the ease-out curve — fast at the start, slowing
-            // into the merge — drives how drawn-out the droplet's tail looks,
-            // so it visibly rounds into a plain drop right as it lands.
-            let speed = 3 * pow(1 - progress, 2)
-            let elongation = min(1, speed)
-
-            // A short trailing stream of smaller, fainter droplets sampled a
-            // touch earlier along the same path — reads as a continuous flow
-            // rather than one shape teleporting along a line.
-            for step in stride(from: 3, through: 0, by: -1) {
-                let stepProgress = max(0, progress - Double(step) * 0.05)
-                let p = toScreen(worldPosition(atProgress: stepProgress))
-                guard isOnScreen(p, size: screenSize, margin: 60) else { continue }
-
-                let isLead = step == 0
-                let stepShrink: CGFloat = isLead ? 1 : CGFloat(1 - Double(step) * 0.22)
-                let stepFade = isLead ? fade : fade * (0.5 - Double(step) * 0.13)
-                guard stepFade > 0.01 else { continue }
-
-                var dropContext = context
-                dropContext.opacity = max(0, min(1, stepFade))
-                dropContext.translateBy(x: p.x, y: p.y)
-                dropContext.rotate(by: travelAngle)
-                let dropRadius: CGFloat = 7 * stepShrink * min(1.7, max(0.8, effect.magnitude / 13))
-                let dropElongation = isLead ? CGFloat(elongation) : CGFloat(elongation) * 0.6
-                dropContext.fill(DotRenderer.liquidDropletPath(radius: dropRadius, elongation: dropElongation),
-                                  with: .color(effect.color.color))
-            }
-
-            // Right as it merges in: a quick outward ripple in the eaten
-            // item's own color, plus a bump that flashes that color onto the
-            // player itself (applied once, after the loop, using whichever
-            // effect is peaking hardest right now).
-            if progress > 0.7 {
-                let arrivalT = min(1, (progress - 0.7) / 0.3)
-                let playerScreenPos = toScreen(player.position)
-                // Everything below scales with roughly how big whatever got
-                // eaten was (`effect.magnitude`) — a plain icon (13) gives
-                // the same modest splash as before, but a big rival dot
-                // visibly bursts into a much bigger one, so "eating another
-                // dot" reads as the bigger event it actually is.
-                let splashScale = max(0.8, min(2.4, effect.magnitude / 13))
-                let rippleRadius = renderSize + 4 + CGFloat(arrivalT) * 22 * splashScale
-                let rippleFade = 1 - arrivalT
-                context.stroke(
-                    Path(ellipseIn: CGRect(x: playerScreenPos.x - rippleRadius, y: playerScreenPos.y - rippleRadius,
-                                            width: rippleRadius * 2, height: rippleRadius * 2)),
-                    with: .color(effect.color.color.opacity(0.4 * rippleFade)), lineWidth: 2.5 * min(1.6, splashScale)
-                )
-
-                // A handful of tiny droplets scattering outward alongside the
-                // ripple — a proper little splash rather than just a ring.
-                // The spread angle is derived from the effect's own start
-                // position (deterministic, so it doesn't flicker frame to
-                // frame) instead of true randomness. A bigger eat also throws
-                // a couple more particles, further out, than a small one.
-                let baseAngle = atan2(Double(effect.startPosition.y), Double(effect.startPosition.x))
-                let particleCount = splashScale > 1.4 ? 8 : 5
-                for i in 0..<particleCount {
-                    let particleAngle = baseAngle + Double(i) * (2 * Double.pi / Double(particleCount))
-                    let particleDistance = CGFloat(arrivalT) * 16 * splashScale
-                    let px = playerScreenPos.x + CGFloat(cos(particleAngle)) * particleDistance
-                    let py = playerScreenPos.y + CGFloat(sin(particleAngle)) * particleDistance
-                    let particleRadius = 2.4 * splashScale * (1 - CGFloat(arrivalT) * 0.5)
-                    context.fill(
-                        Path(ellipseIn: CGRect(x: px - particleRadius, y: py - particleRadius,
-                                                width: particleRadius * 2, height: particleRadius * 2)),
-                        with: .color(effect.color.color.opacity(0.55 * rippleFade))
-                    )
-                }
-
-                let flashBump = max(0, 1 - abs(progress - 1) / 0.3)
-                if flashBump > arrivalFlashAmount {
-                    arrivalFlashAmount = flashBump
-                    arrivalFlashColor = effect.color.color
-                }
-            }
+            let progress = min(1, max(0, Date().timeIntervalSince(effect.startedAt) / AbsorbEffect.duration))
+            let from = toScreen(effect.startPosition)
+            guard isOnScreen(from, size: screenSize, margin: 120) || isOnScreen(playerScreenForMerge, size: screenSize, margin: 0) else { continue }
+            MergeEffect.draw(context, progress: progress, eaten: from, eatenRadius: min(effect.magnitude, 60),
+                             eatenColor: effect.color.color, dot: playerScreenForMerge, dotRadius: renderSize, dotColor: playerBaseColor)
+            if progress > 0.7 { arrivalFlashAmount = max(arrivalFlashAmount, sin((progress - 0.7) / 0.3 * .pi)) }
         }
 
         // Player dot, always screen-centered.
@@ -443,28 +355,6 @@ struct WhiteSpaceView: View {
         let color = engine.roundMode == .final ? (formColor ?? DotRenderer.blendedPlayerColor(formColor: nil, progress: 0))
             : DotRenderer.blendedPlayerColor(formColor: formColor, progress: player.activeFormProgress)
 
-        // A short fading wake of small, shrinking blobs at recent positions —
-        // reads as a liquid streak trailing the dot while it's moving fast,
-        // drawn oldest-first so the newest sample sits closest to the dot.
-        // Skipped under Reduce Motion (a trailing afterimage is exactly the
-        // sort of thing that setting exists to remove).
-        if !player.profile.reduceMotion {
-            let now = Date()
-            for sample in trailSamples {
-                let age = now.timeIntervalSince(sample.time)
-                let ageT = min(1, max(0, age / WhiteSpaceView.trailDuration))
-                let p = toScreen(sample.position)
-                guard isOnScreen(p, size: screenSize, margin: 40) else { continue }
-                let trailRadius = renderSize * CGFloat(0.5 - 0.22 * ageT)
-                let trailFade = (1 - ageT) * 0.16
-                context.fill(
-                    Path(ellipseIn: CGRect(x: p.x - trailRadius, y: p.y - trailRadius,
-                                            width: trailRadius * 2, height: trailRadius * 2)),
-                    with: .color(color.opacity(trailFade))
-                )
-            }
-        }
-
         // (§ user feedback: "the border around the dot in the universe should
         // be removed" — this used to be a soft pulsing aura circle tinted
         // toward the player's color, filled behind the dot at all times; its
@@ -472,19 +362,6 @@ struct WhiteSpaceView: View {
         // player rather than the subtle "alive" glow it was meant to be, so
         // it's gone now. The dot itself still animates plenty via its own
         // squash/stretch and idle motion.)
-
-        // Brief color flash right as something finishes merging in (computed
-        // in the absorb-effects loop above) — a quick tinted pulse over the
-        // dot itself, so eating something visibly "adds" that color and
-        // power rather than just a ring appearing around it.
-        if let flashColor = arrivalFlashColor, arrivalFlashAmount > 0 {
-            let flashRadius = renderSize * 1.08
-            context.fill(
-                Path(ellipseIn: CGRect(x: playerScreenPos.x - flashRadius, y: playerScreenPos.y - flashRadius,
-                                        width: flashRadius * 2, height: flashRadius * 2)),
-                with: .color(flashColor.opacity(0.4 * arrivalFlashAmount))
-            )
-        }
 
         DotRenderer.drawPlayer(context, center: playerScreenPos, radius: renderSize, color: color,
                                 stretch: CGFloat(stretchAmount), angle: Angle(radians: stretchAngleRadians),
@@ -499,32 +376,16 @@ struct WhiteSpaceView: View {
         if let username = player.profile.username {
             drawNameLabel(context, name: username, at: playerScreenPos, belowRadius: renderSize)
         }
-
-        // Ability effect: a quick expanding shockwave right as it triggers
-        // (reads as an actual burst of power instead of a ring just
-        // appearing), settling into a gently breathing aura ring for
-        // whatever's left of the effect's duration.
-        if player.abilityEffectRemaining > 0, let ability = player.equippedAbility {
-            let duration = max(0.1, ability.duration)
-            let elapsed = duration - player.abilityEffectRemaining
-            let tint = formColor ?? .blue
-
-            let shockDuration = 0.35
-            if elapsed < shockDuration {
-                let shockT = CGFloat(elapsed / shockDuration)
-                let shockRadius = renderSize + 6 + shockT * 38
-                let shockFade = 1 - shockT
-                context.stroke(
-                    Path(ellipseIn: CGRect(x: playerScreenPos.x - shockRadius, y: playerScreenPos.y - shockRadius,
-                                            width: shockRadius * 2, height: shockRadius * 2)),
-                    with: .color(tint.opacity(0.6 * Double(shockFade))), lineWidth: 3
-                )
+        if let said = engine.playerMessage, let at = engine.playerMessageAt, t - at.timeIntervalSinceReferenceDate < 6 {
+            var speech = context
+            speech.opacity = min(1, max(0, (6 - (t - at.timeIntervalSinceReferenceDate)) / 1.2))
+            let font = Font.system(size: 12, weight: .heavy, design: .rounded)
+            let half = CGFloat(said.count) * 3.7 + 8
+            let spot = CGPoint(x: min(max(playerScreenPos.x, half), screenSize.width - half), y: playerScreenPos.y - renderSize - 16)
+            for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+                speech.draw(Text(said).font(font).foregroundColor(.black.opacity(0.55)), at: CGPoint(x: spot.x + dx, y: spot.y + dy))
             }
-
-            let r = renderSize + 6
-            let auraBreathe = player.profile.reduceMotion ? 0.5 : 0.35 + 0.2 * sin(t * 6)
-            context.stroke(Path(ellipseIn: CGRect(x: playerScreenPos.x - r, y: playerScreenPos.y - r, width: r * 2, height: r * 2)),
-                            with: .color(tint.opacity(auraBreathe)), lineWidth: 2)
+            speech.draw(Text(said).font(font).foregroundColor(.white), at: spot)
         }
 
         if let bubble = player.chatBubble {
@@ -546,20 +407,15 @@ struct WhiteSpaceView: View {
     /// Nebulous.io-style background.
     private func drawNameLabel(_ context: GraphicsContext, name: String, at center: CGPoint, belowRadius radius: CGFloat) {
         guard !name.isEmpty else { return }
-        let text = Text(name)
-            .font(.system(size: 10, weight: .semibold, design: .rounded))
-            .foregroundColor(.white.opacity(0.92))
-        let resolved = context.resolve(text)
-        let textSize = resolved.measure(in: CGSize(width: 200, height: 20))
-        let paddingX: CGFloat = 6
-        let paddingY: CGFloat = 3
-        let pillSize = CGSize(width: textSize.width + paddingX * 2, height: textSize.height + paddingY * 2)
-        let pillOrigin = CGPoint(x: center.x - pillSize.width / 2, y: center.y + radius + 6)
-        context.fill(
-            Path(roundedRect: CGRect(origin: pillOrigin, size: pillSize), cornerRadius: pillSize.height / 2),
-            with: .color(.black.opacity(0.32))
-        )
-        context.draw(resolved, at: CGPoint(x: center.x, y: pillOrigin.y + pillSize.height / 2))
+        // Plain text with a thin outline (no pill behind it), readable on
+        // light and dark universes alike.
+        let font = Font.system(size: 11, weight: .heavy, design: .rounded)
+        let point = CGPoint(x: center.x, y: center.y + radius + 12)
+        let dark = Color.black.opacity(0.55)
+        for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+            context.draw(Text(name).font(font).foregroundColor(dark), at: CGPoint(x: point.x + dx, y: point.y + dy))
+        }
+        context.draw(Text(name).font(font).foregroundColor(.white), at: point)
     }
 
     /// Standard "ease-out-back" easing: overshoots past 1 briefly before
@@ -643,6 +499,9 @@ struct WhiteSpaceView: View {
     /// or eat-radius math ever reads `displaySize`, only `draw`'s `renderSize`.
     private func updateGrowth(dt: Double) {
         guard dt > 0, dt < 1 else { return }
+        // Held tiny until the window opens, then released so the spring below
+        // pops the dot up to full size as the universe is revealed.
+        if !dotArmed { displaySize = 1; growthVelocity = 0; return }
         if displaySize == 0 { displaySize = player.size }
         let stiffness = 210.0
         let damping = 14.0
@@ -668,12 +527,24 @@ struct WhiteSpaceView: View {
         trailSamples.removeAll { now.timeIntervalSince($0.time) > WhiteSpaceView.trailDuration }
     }
 
+    /// Tapping a dot opens its card (add friend).
+    private func selectDot(at location: CGPoint, screenSize: CGSize) {
+        let camera = CGPoint(x: player.position.x - screenSize.width / 2, y: player.position.y - screenSize.height / 2)
+        let world = CGPoint(x: location.x + camera.x, y: location.y + camera.y)
+        let hit = engine.rivals
+            .filter { hypot($0.position.x - world.x, $0.position.y - world.y) <= $0.radius + 18 }
+            .min { hypot($0.position.x - world.x, $0.position.y - world.y) < hypot($1.position.x - world.x, $1.position.y - world.y) }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { selectedName = hit?.username }
+    }
+
     // MARK: - Movement input (drag anywhere, §42 Option A)
 
     private func dragGesture(screenSize: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 4)
+        DragGesture(minimumDistance: 0)
             .onChanged { value in
                 if dragStart == nil { dragStart = value.startLocation }
+                // A touch that has barely moved is a tap, not steering.
+                if hypot(value.translation.width, value.translation.height) < 6 { return }
                 guard let start = dragStart else { return }
                 let dx = value.location.x - start.x
                 let dy = value.location.y - start.y
@@ -682,9 +553,13 @@ struct WhiteSpaceView: View {
                 let clampedY = max(-maxRange, min(maxRange, dy)) / maxRange
                 engine.moveInput = CGVector(dx: clampedX, dy: clampedY)
             }
-            .onEnded { _ in
+            .onEnded { value in
                 dragStart = nil
                 engine.moveInput = .zero
+                chatFocused = false
+                if hypot(value.translation.width, value.translation.height) < 6 {
+                    selectDot(at: value.startLocation, screenSize: screenSize)
+                }
             }
     }
 
@@ -717,14 +592,15 @@ struct WhiteSpaceView: View {
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(HUDChip(shape: Capsule()))
 
             Spacer()
 
-            Text("Intelligence \(player.profile.intelligenceLevel)")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+            Text("Score \(max(0, player.profile.points - engine.gameStartPoints))")
+                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .monospacedDigit()
                 .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(.ultraThinMaterial, in: Capsule())
+                .background(HUDChip(shape: Capsule()))
         }
         .foregroundColor(.black.opacity(0.75))
         .padding(.horizontal, 16)
@@ -749,13 +625,14 @@ struct WhiteSpaceView: View {
                     // identical whether it's ready or still recharging.
                     if player.canUseAbility && !player.profile.reduceMotion {
                         Circle()
-                            .stroke(Color.black.opacity(abilityPulseOn ? 0.0 : 0.4), lineWidth: 2)
+                            .stroke(DotRenderer.defaultColor.opacity(abilityPulseOn ? 0.0 : 0.5), lineWidth: 3)
                             .frame(width: 64, height: 64)
                             .scaleEffect(abilityPulseOn ? 1.4 : 1.0)
                     }
                     Circle()
-                        .fill(player.canUseAbility ? Color.black.opacity(0.85) : Color.gray.opacity(0.3))
+                        .fill(player.canUseAbility ? DotRenderer.defaultColor : Color(white: 0.82))
                         .frame(width: 64, height: 64)
+                        .overlay(Circle().stroke((player.canUseAbility ? DotRenderer.defaultColor : Color(white: 0.82)).deepened(0.6), lineWidth: 4))
                     if player.abilityCooldownRemaining > 0 {
                         Text("\(Int(ceil(player.abilityCooldownRemaining)))")
                             .font(.system(size: 18, weight: .bold, design: .rounded))
@@ -789,8 +666,7 @@ struct WhiteSpaceView: View {
     private var minimap: some View {
         let mapSize: CGFloat = 84
         return ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
+            HUDChip(shape: RoundedRectangle(cornerRadius: 14, style: .continuous))
             Canvas { context, size in
                 let worldSize = GameEngine.worldSize
                 func toMap(_ p: CGPoint) -> CGPoint {
@@ -811,8 +687,6 @@ struct WhiteSpaceView: View {
                              with: .color(.blue))
             }
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.black.opacity(0.12), lineWidth: 1)
         }
         .frame(width: mapSize, height: mapSize)
         .padding(.top, 54)
@@ -825,7 +699,7 @@ struct WhiteSpaceView: View {
             .monospacedDigit()
             .foregroundColor(engine.timeRemaining < 30 ? .red : .black.opacity(0.75))
             .padding(.horizontal, 14).padding(.vertical, 7)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(HUDChip(shape: Capsule()))
             .padding(.bottom, 106)
     }
 
@@ -843,8 +717,7 @@ struct WhiteSpaceView: View {
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                 }
                 .padding(20)
-                .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 18))
-                .foregroundColor(.white)
+                .modifier(GameCard(color: Color(red: 0.20, green: 0.50, blue: 1.0)))
                 .transition(.scale.combined(with: .opacity))
                 .onAppear {
                     HapticsManager.shared.impact(.medium)
@@ -870,8 +743,7 @@ struct WhiteSpaceView: View {
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                 }
                 .padding(20)
-                .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 18))
-                .foregroundColor(.white)
+                .modifier(GameCard(color: Color(red: 0.95, green: 0.30, blue: 0.38)))
                 .transition(.scale.combined(with: .opacity))
                 .onAppear {
                     HapticsManager.shared.impact(.medium)
@@ -890,7 +762,7 @@ struct WhiteSpaceView: View {
                 .font(.system(size: 17, weight: .medium))
                 .foregroundColor(.black.opacity(0.75))
                 .frame(width: 42, height: 42)
-                .background(.ultraThinMaterial, in: Circle())
+                .background(HUDChip(shape: Circle()))
         }
     }
 
@@ -918,9 +790,9 @@ struct WhiteSpaceView: View {
                             .font(.system(size: 15, weight: .bold, design: .rounded))
                     }
                     .padding(20)
-                    .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 18))
-                    .foregroundColor(.white)
+                    .modifier(GameCard(color: form.primaryColor.color.deepened(0.85)))
                 }
+                .offset(y: -190)
                 .transition(.scale.combined(with: .opacity))
                 .onAppear {
                     HapticsManager.shared.success()
@@ -947,9 +819,9 @@ struct WhiteSpaceView: View {
                             .font(.system(size: 15, weight: .bold, design: .rounded))
                     }
                     .padding(18)
-                    .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 16))
-                    .foregroundColor(.white)
+                    .modifier(GameCard(color: Color(red: 0.98, green: 0.62, blue: 0.10)))
                 }
+                .offset(y: -190)
                 .transition(.scale.combined(with: .opacity))
                 .onAppear {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
@@ -972,13 +844,114 @@ struct WhiteSpaceView: View {
                     .font(.system(size: 20, weight: .heavy, design: .rounded))
                     .foregroundColor(.white)
                     .padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(Color.orange, in: Capsule())
-                    .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
+                    .background(Color(red: 0.98, green: 0.55, blue: 0.10), in: Capsule())
+                    .overlay(Capsule().stroke(Color(red: 0.98, green: 0.55, blue: 0.10).deepened(0.6), lineWidth: 3))
                     .transition(.scale.combined(with: .opacity))
                     .padding(.top, 92)
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.55), value: engine.comboBannerText)
+    }
+
+    /// The match chat, small, top-left: the last few lines, a button to open
+    /// the box, and (when open) a field with Send and a button that closes the
+    /// keyboard. Tapping the universe also closes the keyboard.
+    private var chatFeed: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !engine.chatFeed.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(engine.chatFeed.suffix(4)) { line in
+                        (Text(line.name + "  ").font(.system(size: 11, weight: .heavy, design: .rounded)).foregroundColor(DotRenderer.defaultColor)
+                            + Text(line.text).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.black.opacity(0.8)))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .frame(maxWidth: 230, alignment: .leading)
+                .background(HUDChip(shape: RoundedRectangle(cornerRadius: 14, style: .continuous)))
+                .allowsHitTesting(false)
+            }
+            if chatOpen {
+                HStack(spacing: 6) {
+                    TextField("Say something", text: $chatDraft)
+                        .focused($chatFocused)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .submitLabel(.send)
+                        .onSubmit { sendChat() }
+                        .padding(.horizontal, 10).frame(height: 34)
+                    if chatFocused {
+                        Button { chatFocused = false } label: {
+                            Image(systemName: "keyboard.chevron.compact.down").font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.black.opacity(0.5)).frame(width: 30, height: 34)
+                        }.buttonStyle(.plain).accessibilityLabel("Hide keyboard")
+                    }
+                    Button { sendChat() } label: {
+                        Image(systemName: "arrow.up").font(.system(size: 13, weight: .heavy)).foregroundColor(.white)
+                            .frame(width: 30, height: 30)
+                            .background(chatDraft.trimmingCharacters(in: .whitespaces).isEmpty ? Color(white: 0.8) : DotRenderer.defaultColor, in: Circle())
+                    }.buttonStyle(.plain).padding(.trailing, 3).accessibilityLabel("Send")
+                }
+                .frame(maxWidth: 230)
+                .background(HUDChip(shape: Capsule()))
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { chatOpen.toggle() }
+                if chatOpen { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { chatFocused = true } } else { chatFocused = false }
+            } label: {
+                Image(systemName: chatOpen ? "xmark" : "bubble.left.fill")
+                    .font(.system(size: 14, weight: .bold)).foregroundColor(DotRenderer.defaultColor)
+                    .frame(width: 38, height: 34)
+                    .background(HUDChip(shape: Capsule()))
+            }
+            .buttonStyle(.plain).accessibilityLabel(chatOpen ? "Close chat" : "Open chat")
+        }
+        .padding(.top, 108).padding(.leading, 16)
+    }
+
+    private func sendChat() {
+        let text = chatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { chatFocused = false; return }
+        engine.playerSay(String(text.prefix(60)))
+        onChat(String(text.prefix(60)))
+        chatDraft = ""
+        chatFocused = false
+        HapticsManager.shared.impact(.light)
+    }
+
+    /// Opens after tapping a dot: who it is and a one-tap Add friend.
+    private var playerCard: some View {
+        Group {
+            if let name = selectedName, let rival = engine.rivals.first(where: { $0.username == name }) {
+                let isFriend = friends.isFriend(name)
+                HStack(spacing: 12) {
+                    OrbView(color: rival.tint.color, size: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(name).font(.system(size: 17, weight: .heavy, design: .rounded))
+                        Text("\(max(1, Int(rival.radius * rival.radius / 8))) mass")
+                            .font(.system(size: 12, weight: .semibold)).foregroundColor(.black.opacity(0.5))
+                    }
+                    Spacer(minLength: 8)
+                    Button {
+                        if isFriend { friends.remove(name) } else { friends.add(name); HapticsManager.shared.impact(.light) }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: isFriend ? "checkmark" : "person.badge.plus").font(.system(size: 13, weight: .bold))
+                            Text(isFriend ? "Friends" : "Add friend").font(.system(size: 14, weight: .heavy, design: .rounded))
+                        }
+                        .foregroundColor(isFriend ? DotRenderer.defaultColor : .white)
+                        .padding(.horizontal, 14).frame(height: 38)
+                        .background(isFriend ? DotRenderer.defaultColor.opacity(0.14) : DotRenderer.defaultColor, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .background(HUDChip(shape: RoundedRectangle(cornerRadius: 22, style: .continuous)))
+                .padding(.horizontal, 24).padding(.bottom, 150)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
     }
 
     private var signalBanner: some View {
@@ -987,11 +960,34 @@ struct WhiteSpaceView: View {
                 Text(text)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .padding(.horizontal, 14).padding(.vertical, 7)
-                    .background(.black, in: Capsule())
+                    .background(DotRenderer.defaultColor, in: Capsule())
+                    .overlay(Capsule().stroke(DotRenderer.defaultColor.deepened(0.6), lineWidth: 3))
                     .foregroundColor(.white)
                     .padding(.top, 50)
                     .transition(.opacity)
             }
         }
+    }
+}
+
+
+/// Flat white chip with a bold outline, used behind HUD readouts in place of
+/// translucent material.
+struct HUDChip<S: Shape>: View {
+    let shape: S
+    var body: some View {
+        shape.fill(Color.white).overlay(shape.stroke(Color(red: 0.20, green: 0.50, blue: 1.0).opacity(0.28), lineWidth: 2.5))
+    }
+}
+
+/// A flat, vivid card with a bold darker border for banners ("Time's up",
+/// "You were eaten", level and form messages).
+struct GameCard: ViewModifier {
+    let color: Color
+    func body(content: Content) -> some View {
+        content
+            .foregroundColor(.white)
+            .background(color, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(color.deepened(0.6), lineWidth: 4))
     }
 }

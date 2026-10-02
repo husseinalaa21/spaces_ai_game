@@ -7,6 +7,21 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E54C5EA4328D7A9510C571B2 /* AgentAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E54C5EA4328D7A9510C571A1 /* AgentAvatar.swift */; };
+		E58F8E5FD4AB700AF8B11DB2 /* AgentAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E58F8E5FD4AB700AF8B11DA1 /* AgentAccess.swift */; };
+		E5F621CAED4EDAA8E3D07EB2 /* FoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F621CAED4EDAA8E3D07EA1 /* FoldersView.swift */; };
+		E5BA7EB5D697289A778CD9B2 /* AgentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BA7EB5D697289A778CD9A1 /* AgentsView.swift */; };
+		E543616CFADAA8F408AF74B2 /* AgentRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E543616CFADAA8F408AF74A1 /* AgentRunner.swift */; };
+		E5B89CDC4C2FE0D7F8C541B2 /* AgentsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5B89CDC4C2FE0D7F8C541A1 /* AgentsStore.swift */; };
+		E5F0639E2CD6834EE764C8B2 /* FolderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F0639E2CD6834EE764C8A1 /* FolderStore.swift */; };
+		E5BC83530A99C91283E12FB2 /* DotCoach.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BC83530A99C91283E12FA1 /* DotCoach.swift */; };
+		E51C935A82B3FB83399866B2 /* MatchScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = E51C935A82B3FB83399866A1 /* MatchScreens.swift */; };
+		E50EB6E716C15697E178EAB2 /* DotAgents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50EB6E716C15697E178EAA1 /* DotAgents.swift */; };
+		E5DB1BAA942A937CF9730AB2 /* DotShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5DB1BAA942A937CF9730AA1 /* DotShape.swift */; };
+		E5385A775DEEAB66DAEED5B2 /* UniverseEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5385A775DEEAB66DAEED5A1 /* UniverseEntry.swift */; };
+		E5E771F5E1F1736849F2D0B2 /* MergeEffect.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5E771F5E1F1736849F2D0A1 /* MergeEffect.swift */; };
+		E50993B5721FD9A01BA6AAB2 /* SpacesAIStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50993B5721FD9A01BA6AAA1 /* SpacesAIStore.swift */; };
+		E5715597B5BC506FEBDC16B2 /* AIVoiceKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5715597B5BC506FEBDC16A1 /* AIVoiceKit.swift */; };
 		10223755B3BB371A60C29E0E /* AIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C8581A237BE6C61D43444C5 /* AIApp.swift */; };
 		20B6E724792FB04822CEAB7E /* WhiteSpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70860C2AA8C67D0C211C7BE /* WhiteSpaceView.swift */; };
 		2B8E49131928AE3D3F3B46D5 /* CollectibleCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D42909240F5FD384E729950 /* CollectibleCatalog.swift */; };
@@ -38,6 +53,7 @@
 		A1F007570000000000000CB2 /* MessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F007570000000000000CA1 /* MessagesView.swift */; };
 		A1F007570000000000000DB2 /* SettingsPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F007570000000000000DA1 /* SettingsPageView.swift */; };
 		A1F007570000000000000EB2 /* SettingsSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F007570000000000000EA1 /* SettingsSheets.swift */; };
+		A1F0075700000000000010B2 /* SubscriptionDisclosureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F0075700000000000010A1 /* SubscriptionDisclosureView.swift */; };
 		C694C3C29E7F1BAB1BD2E31E /* Collectible.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B5E6BD990F8A126FFDB1FE /* Collectible.swift */; };
 		CE11FF666039074155A4FA32 /* levelup.wav in Resources */ = {isa = PBXBuildFile; fileRef = B0B07A21B5145848FF935927 /* levelup.wav */; };
 		D384B32AC1D483C111E31499 /* AuthState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28BEA2C2EBFB86254DA89338 /* AuthState.swift */; };
@@ -54,6 +70,21 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		E54C5EA4328D7A9510C571A1 /* AgentAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAvatar.swift; sourceTree = "<group>"; };
+		E58F8E5FD4AB700AF8B11DA1 /* AgentAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAccess.swift; sourceTree = "<group>"; };
+		E5F621CAED4EDAA8E3D07EA1 /* FoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldersView.swift; sourceTree = "<group>"; };
+		E5BA7EB5D697289A778CD9A1 /* AgentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsView.swift; sourceTree = "<group>"; };
+		E543616CFADAA8F408AF74A1 /* AgentRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunner.swift; sourceTree = "<group>"; };
+		E5B89CDC4C2FE0D7F8C541A1 /* AgentsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsStore.swift; sourceTree = "<group>"; };
+		E5F0639E2CD6834EE764C8A1 /* FolderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderStore.swift; sourceTree = "<group>"; };
+		E5BC83530A99C91283E12FA1 /* DotCoach.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DotCoach.swift; sourceTree = "<group>"; };
+		E51C935A82B3FB83399866A1 /* MatchScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchScreens.swift; sourceTree = "<group>"; };
+		E50EB6E716C15697E178EAA1 /* DotAgents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DotAgents.swift; sourceTree = "<group>"; };
+		E5DB1BAA942A937CF9730AA1 /* DotShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DotShape.swift; sourceTree = "<group>"; };
+		E5385A775DEEAB66DAEED5A1 /* UniverseEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniverseEntry.swift; sourceTree = "<group>"; };
+		E5E771F5E1F1736849F2D0A1 /* MergeEffect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MergeEffect.swift; sourceTree = "<group>"; };
+		E50993B5721FD9A01BA6AAA1 /* SpacesAIStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesAIStore.swift; sourceTree = "<group>"; };
+		E5715597B5BC506FEBDC16A1 /* AIVoiceKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIVoiceKit.swift; sourceTree = "<group>"; };
 		07B472C9D880473EDD8D1668 /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
 		085F83481BCFC779F65BCB0A /* pop.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = pop.wav; sourceTree = "<group>"; };
 		11E8793DDEEBDB076716B0C5 /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
@@ -86,6 +117,7 @@
 		A1F007570000000000000CA1 /* MessagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagesView.swift; sourceTree = "<group>"; };
 		A1F007570000000000000DA1 /* SettingsPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPageView.swift; sourceTree = "<group>"; };
 		A1F007570000000000000EA1 /* SettingsSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSheets.swift; sourceTree = "<group>"; };
+		A1F0075700000000000010A1 /* SubscriptionDisclosureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionDisclosureView.swift; sourceTree = "<group>"; };
 		A5960B2C25F5F7F88A186B71 /* DotRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DotRenderer.swift; sourceTree = "<group>"; };
 		A80660880642D81F396521FB /* GameEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameEngine.swift; sourceTree = "<group>"; };
 		AEF9DC98AD8ED77E117F63CC /* HapticsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticsManager.swift; sourceTree = "<group>"; };
@@ -172,6 +204,22 @@
 			children = (
 				A1F007570000000000000DA1 /* SettingsPageView.swift */,
 				A1F007570000000000000EA1 /* SettingsSheets.swift */,
+				E5715597B5BC506FEBDC16A1 /* AIVoiceKit.swift */,
+				E50993B5721FD9A01BA6AAA1 /* SpacesAIStore.swift */,
+				E5E771F5E1F1736849F2D0A1 /* MergeEffect.swift */,
+				E5385A775DEEAB66DAEED5A1 /* UniverseEntry.swift */,
+				E5DB1BAA942A937CF9730AA1 /* DotShape.swift */,
+				E50EB6E716C15697E178EAA1 /* DotAgents.swift */,
+				E51C935A82B3FB83399866A1 /* MatchScreens.swift */,
+				E5BC83530A99C91283E12FA1 /* DotCoach.swift */,
+				E5F0639E2CD6834EE764C8A1 /* FolderStore.swift */,
+				E5B89CDC4C2FE0D7F8C541A1 /* AgentsStore.swift */,
+				E543616CFADAA8F408AF74A1 /* AgentRunner.swift */,
+				E5BA7EB5D697289A778CD9A1 /* AgentsView.swift */,
+				E5F621CAED4EDAA8E3D07EA1 /* FoldersView.swift */,
+				E58F8E5FD4AB700AF8B11DA1 /* AgentAccess.swift */,
+				E54C5EA4328D7A9510C571A1 /* AgentAvatar.swift */,
+				A1F0075700000000000010A1 /* SubscriptionDisclosureView.swift */,
 				A1F007570000000000000CA1 /* MessagesView.swift */,
 				A1F007570000000000000BA1 /* SpacechatAIView.swift */,
 				A1F007570000000000000AA1 /* GameHubView.swift */,
@@ -356,6 +404,22 @@
 				A1F007570000000000000FB2 /* SpacesLinks.swift in Sources */,
 				A1F007570000000000000DB2 /* SettingsPageView.swift in Sources */,
 				A1F007570000000000000EB2 /* SettingsSheets.swift in Sources */,
+				E5715597B5BC506FEBDC16B2 /* AIVoiceKit.swift in Sources */,
+				E50993B5721FD9A01BA6AAB2 /* SpacesAIStore.swift in Sources */,
+				E5E771F5E1F1736849F2D0B2 /* MergeEffect.swift in Sources */,
+				E5385A775DEEAB66DAEED5B2 /* UniverseEntry.swift in Sources */,
+				E5DB1BAA942A937CF9730AB2 /* DotShape.swift in Sources */,
+				E50EB6E716C15697E178EAB2 /* DotAgents.swift in Sources */,
+				E51C935A82B3FB83399866B2 /* MatchScreens.swift in Sources */,
+				E5BC83530A99C91283E12FB2 /* DotCoach.swift in Sources */,
+				E5F0639E2CD6834EE764C8B2 /* FolderStore.swift in Sources */,
+				E5B89CDC4C2FE0D7F8C541B2 /* AgentsStore.swift in Sources */,
+				E543616CFADAA8F408AF74B2 /* AgentRunner.swift in Sources */,
+				E5BA7EB5D697289A778CD9B2 /* AgentsView.swift in Sources */,
+				E5F621CAED4EDAA8E3D07EB2 /* FoldersView.swift in Sources */,
+				E58F8E5FD4AB700AF8B11DB2 /* AgentAccess.swift in Sources */,
+				E54C5EA4328D7A9510C571B2 /* AgentAvatar.swift in Sources */,
+				A1F0075700000000000010B2 /* SubscriptionDisclosureView.swift in Sources */,
 				A1F0075700000000000009B2 /* SpacechatService.swift in Sources */,
 				A1F007570000000000000AB2 /* GameHubView.swift in Sources */,
 				A1F007570000000000000BB2 /* SpacechatAIView.swift in Sources */,
@@ -465,7 +529,7 @@
 				CODE_SIGN_ENTITLEMENTS = AI.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = SVDD93966K;
 				INFOPLIST_FILE = Sources/AI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -473,7 +537,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 2.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.husseinalaa.ai;
 				PRODUCT_NAME = "Spaces - Dots Game";
 				SDKROOT = iphoneos;
@@ -548,7 +612,7 @@
 				CODE_SIGN_ENTITLEMENTS = AI.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = SVDD93966K;
 				INFOPLIST_FILE = Sources/AI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -556,7 +620,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 2.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.husseinalaa.ai;
 				PRODUCT_NAME = "Spaces - Dots Game";
 				SDKROOT = iphoneos;

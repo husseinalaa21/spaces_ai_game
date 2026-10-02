@@ -18,8 +18,8 @@ enum WorldBackground {
     }
 
     static let whiteSpace = Palette(
-        background: .white,
-        line: Color(red: 222/255, green: 224/255, blue: 228/255)
+        background: Color(red: 0.97, green: 0.98, blue: 1.0),
+        line: Color(red: 0.74, green: 0.80, blue: 0.93)
     )
 
     /// Placeholder palette for Dark Space (§81: near-black background, light
@@ -39,7 +39,7 @@ enum WorldBackground {
     )
 
     static let midnight = Palette(
-        background: Color(red: 0.07, green: 0.08, blue: 0.14),
+        background: Color(red: 0.11, green: 0.13, blue: 0.30),
         line: Color.white.opacity(0.12)
     )
 
@@ -64,18 +64,18 @@ enum WorldBackground {
     )
 
     static let volcano = Palette(
-        background: Color(red: 0.10, green: 0.04, blue: 0.03),
+        background: Color(red: 0.30, green: 0.09, blue: 0.08),
         line: Color(red: 0.95, green: 0.35, blue: 0.10).opacity(0.55)
     )
 
     static let aurora = Palette(
-        background: Color(red: 0.03, green: 0.07, blue: 0.09),
+        background: Color(red: 0.05, green: 0.22, blue: 0.27),
         line: Color(red: 0.30, green: 0.90, blue: 0.70).opacity(0.45),
         isCosmic: true
     )
 
     static let cosmic = Palette(
-        background: Color(red: 0.03, green: 0.02, blue: 0.09),
+        background: Color(red: 0.17, green: 0.10, blue: 0.38),
         line: Color(red: 0.65, green: 0.45, blue: 0.95).opacity(0.4),
         isCosmic: true
     )
@@ -86,8 +86,8 @@ enum WorldBackground {
     /// here after the practice room actually reads as a real place change —
     /// a dark, glowing nebula field instead of another flat palette swap.
     static let finalUniverse = Palette(
-        background: Color(red: 0.02, green: 0.02, blue: 0.06),
-        line: Color.white.opacity(0.09),
+        background: Color(red: 0.10, green: 0.11, blue: 0.32),
+        line: Color(red: 0.62, green: 0.68, blue: 1.0).opacity(0.16),
         isCosmic: true
     )
 
@@ -103,6 +103,36 @@ enum WorldBackground {
         case .aurora: return aurora
         case .cosmic: return cosmic
         }
+    }
+
+    /// The edge of the universe: past it the world is dark, and the last
+    /// stretch inside fades from dark to clear, so the boundary reads as a
+    /// soft gradient wall rather than a hard cut. Drawn in world space.
+    static func drawBoundary(_ context: GraphicsContext, screenSize: CGSize, cameraOffset: CGPoint) {
+        let world = GameEngine.worldSize
+        let band: CGFloat = 260
+        let dark = Color(red: 0.03, green: 0.04, blue: 0.12)
+        let left = -cameraOffset.x, top = -cameraOffset.y
+        let right = world - cameraOffset.x, bottom = world - cameraOffset.y
+        let W = screenSize.width, H = screenSize.height
+        guard left > -band || top > -band || right < W + band || bottom < H + band else { return }
+
+        // Solid dark outside the universe.
+        if left > 0 { context.fill(Path(CGRect(x: 0, y: 0, width: min(W, left), height: H)), with: .color(dark)) }
+        if right < W { context.fill(Path(CGRect(x: max(0, right), y: 0, width: W - max(0, right), height: H)), with: .color(dark)) }
+        if top > 0 { context.fill(Path(CGRect(x: 0, y: 0, width: W, height: min(H, top))), with: .color(dark)) }
+        if bottom < H { context.fill(Path(CGRect(x: 0, y: max(0, bottom), width: W, height: H - max(0, bottom))), with: .color(dark)) }
+
+        // Gradient bands just inside each edge.
+        func gradient(_ rect: CGRect, from: CGPoint, to: CGPoint) {
+            guard rect.width > 0, rect.height > 0 else { return }
+            context.fill(Path(rect), with: .linearGradient(Gradient(colors: [dark.opacity(0.9), dark.opacity(0.45), dark.opacity(0)]),
+                                                           startPoint: from, endPoint: to))
+        }
+        if left > -band { gradient(CGRect(x: left, y: 0, width: band, height: H), from: CGPoint(x: left, y: 0), to: CGPoint(x: left + band, y: 0)) }
+        if right < W + band { gradient(CGRect(x: right - band, y: 0, width: band, height: H), from: CGPoint(x: right, y: 0), to: CGPoint(x: right - band, y: 0)) }
+        if top > -band { gradient(CGRect(x: 0, y: top, width: W, height: band), from: CGPoint(x: 0, y: top), to: CGPoint(x: 0, y: top + band)) }
+        if bottom < H + band { gradient(CGRect(x: 0, y: bottom - band, width: W, height: band), from: CGPoint(x: 0, y: bottom), to: CGPoint(x: 0, y: bottom - band)) }
     }
 
     static let cellSize: CGFloat = 60
@@ -138,6 +168,7 @@ enum WorldBackground {
                   cellSize: cellSize / CGFloat(fineDivisions), color: palette.line.opacity(0.18 * breathe), lineWidth: fineLineWidth)
         drawGrid(context, screenSize: screenSize, cameraOffset: cameraOffset,
                   cellSize: cellSize, color: palette.line.opacity(0.5), lineWidth: lineWidth)
+        drawBoundary(context, screenSize: screenSize, cameraOffset: cameraOffset)
 
         // A soft vignette — screen-space, not world-space, so it always
         // frames the viewport itself rather than scrolling with the camera —

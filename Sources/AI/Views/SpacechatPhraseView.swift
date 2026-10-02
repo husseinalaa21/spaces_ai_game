@@ -34,14 +34,25 @@ struct SpacechatPhraseView: View {
     @State private var showExporter = false
     @State private var copied = false
     @State private var localError: String?
+    /// Create mode starts empty with Generate / Type buttons inside the field; typing instead hides them.
+    @State private var manualEntry = false
+    @State private var generatedPulse = false
+    @FocusState private var phraseFocused: Bool
 
     private var wordCount: Int { SpacechatAuth.wordCount(phrase) }
     private var canSubmit: Bool { SpacechatAuth.isValid(phrase) && !isWorking }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            header
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    Text("Sign In | Log In")
+                        .font(.system(size: 26, weight: .heavy, design: .rounded))
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 8)
+                        .accessibilityAddTraits(.isHeader)
+
                     if mode == nil {
                         chooser
                     } else {
@@ -56,31 +67,48 @@ struct SpacechatPhraseView: View {
                 }
                 .padding(20)
             }
-            .background(Color(white: 0.97).ignoresSafeArea())
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    if mode == nil {
-                        Button("Cancel") { dismiss() }
-                    } else {
-                        Button("Back") { backToChooser() }
-                    }
-                }
-            }
-            // Attached at this level, not inside a branch: a modifier on a
-            // view that disappears when `mode` changes never gets to run its
-            // completion handler.
-            .fileImporter(isPresented: $showImporter,
-                          allowedContentTypes: [.plainText, .text],
-                          allowsMultipleSelection: false) { result in
-                importPhrase(result)
-            }
-            .fileExporter(isPresented: $showExporter,
-                          document: PhraseDocument(text: phrase),
-                          contentType: .plainText,
-                          defaultFilename: exportFileName()) { _ in }
+            .scrollDismissesKeyboard(.interactively)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(white: 0.97).ignoresSafeArea())
+        .preferredColorScheme(.light)
+        // Attached at this level, not inside a branch: a modifier on a
+        // view that disappears when `mode` changes never gets to run its
+        // completion handler.
+        .fileImporter(isPresented: $showImporter,
+                      allowedContentTypes: [.plainText, .text],
+                      allowsMultipleSelection: false) { result in
+            importPhrase(result)
+        }
+        .fileExporter(isPresented: $showExporter,
+                      document: PhraseDocument(text: phrase),
+                      contentType: .plainText,
+                      defaultFilename: exportFileName()) { _ in }
+    }
+
+    /// Full-width header: the grey bar runs edge to edge (and under the status
+    /// bar), with the back / cancel button on the left and the logo and name centred.
+    private var header: some View {
+        ZStack {
+            HStack(spacing: 8) {
+                GameLogoMark(size: 30, animated: false)
+                Text("Spaces")
+                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .tracking(0.6)
+            }
+            HStack {
+                Button(mode == nil ? "Cancel" : "Back") {
+                    if mode == nil { dismiss() } else { backToChooser() }
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.black.opacity(0.75))
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity)
+        .background(Color(white: 0.93).ignoresSafeArea(edges: .top))
     }
 
     private var title: String {
@@ -114,6 +142,7 @@ struct SpacechatPhraseView: View {
                          icon: "keyboard") {
                 phrase = ""
                 revealed = true
+                manualEntry = true
                 localError = nil
                 authState.errorMessage = nil
                 mode = .type
@@ -125,8 +154,9 @@ struct SpacechatPhraseView: View {
                          subtitle: "Generate 12 words and start fresh",
                          icon: "sparkles",
                          prominent: true) {
-                phrase = SpacechatAuth.generatePhrase()
+                phrase = ""
                 revealed = true
+                manualEntry = false
                 localError = nil
                 authState.errorMessage = nil
                 mode = .create
@@ -163,14 +193,14 @@ struct SpacechatPhraseView: View {
     private var editor: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(mode == .create
-                 ? "These 12 words are your new account. Save them somewhere safe before continuing."
+                 ? "Generate 12 words for your new account and save them somewhere safe before continuing."
                  : "Enter the 12 to 18 words for your account.")
                 .font(.system(size: 13))
                 .foregroundColor(.black.opacity(0.6))
 
             phraseField
 
-            if mode == .create {
+            if mode == .create && !phrase.isEmpty {
                 createActions
 
                 Label("Nobody can recover this phrase for you, and anyone who has it can sign in as you. Spacechat will never ask you for it.",
@@ -218,39 +248,145 @@ struct SpacechatPhraseView: View {
         .buttonStyle(.plain)
     }
 
+    /// The words as numbered tiles, the way Spacechat's login shows a phrase once the field loses focus.
+    private var tokens: [(index: Int, word: String, number: Int)] {
+        let words = SpacechatAuth.normalize(phrase).split(separator: " ").map(String.init)
+        let list = SpacechatWords.all
+        return words.enumerated().map { i, word in (i, word, (list.firstIndex(of: word) ?? i) + 1) }
+    }
+
+    private var showsGenerate: Bool { mode == .create && phrase.isEmpty && !manualEntry }
+    private var showsTiles: Bool { !phraseFocused && !tokens.isEmpty }
+
+    private func generate() {
+        phrase = SpacechatAuth.generatePhrase()
+        revealed = true
+        copied = false
+        localError = nil
+        HapticsManager.shared.impact(.light)
+    }
+
     private var phraseField: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: Binding(
-                    get: { phrase },
-                    set: { phrase = SpacechatAuth.normalizeForEditing($0); copied = false }
-                ))
-                .font(.system(size: 15, design: .monospaced))
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .scrollContentBackground(.hidden)
-                .frame(height: 112)
-                .padding(8)
-                .opacity(revealed ? 1 : 0.02)
-
-                if !revealed {
-                    Text(phrase.isEmpty ? "Type or paste your phrase" : "Phrase hidden")
-                        .font(.system(size: 14))
-                        .foregroundColor(.black.opacity(0.35))
-                        .padding(14)
-                        .allowsHitTesting(false)
+            if showsTiles {
+                HStack {
+                    Spacer()
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) { revealed.toggle() }
+                    } label: {
+                        Label(revealed ? "Hide words" : "Click to view", systemImage: revealed ? "eye.slash.fill" : "eye.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.black.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
+
+            ZStack(alignment: .topLeading) {
+                TextField("Enter your 12 to 18 word phrase", text: Binding(
+                    get: { phrase },
+                    set: { phrase = SpacechatAuth.normalizeForEditing($0); copied = false; localError = nil }
+                ), axis: .vertical)
+                .focused($phraseFocused)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(size: 15, weight: .semibold))
+                .tint(.black)
+                .lineLimit(4...6)
+                .padding(18)
+                .frame(maxWidth: .infinity, minHeight: 188, maxHeight: 188, alignment: .topLeading)
+                .opacity(showsTiles ? 0 : 1)
+                .onAppear {
+                    // Open ready to type or paste, without a second tap.
+                    if mode == .type { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { phraseFocused = true } }
+                }
+                .onChange(of: phraseFocused) { focused in if focused { revealed = false } }
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") { phraseFocused = false }.font(.system(size: 15, weight: .bold))
+                    }
+                }
+
+                if showsTiles {
+                    ScrollView(showsIndicators: false) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 9)], alignment: .leading, spacing: 9) {
+                            ForEach(tokens, id: \.index) { token in
+                                HStack(spacing: 7) {
+                                    Text("\(token.number).").font(.system(size: 12, weight: .semibold)).foregroundColor(.black.opacity(0.45))
+                                    Text(revealed ? token.word : "\(token.word.first.map(String.init) ?? "")***")
+                                        .font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                                }
+                                .padding(.horizontal, 10)
+                                .frame(minHeight: 34, alignment: .leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.black.opacity(0.75), lineWidth: 1))
+                            }
+                        }
+                        .padding(18)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 188, maxHeight: 188, alignment: .topLeading)
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(TapGesture().onEnded { phraseFocused = true })
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 188, maxHeight: 188, alignment: .topLeading)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(phraseFocused ? Color.black : Color.black.opacity(0.1), lineWidth: phraseFocused ? 2 : 1))
+            .overlay {
+                if showsGenerate { generateOverlay.transition(.opacity) }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .animation(.easeOut(duration: 0.18), value: showsGenerate)
 
             HStack {
-                Button(revealed ? "Hide words" : "Show words") { revealed.toggle() }
-                    .font(.system(size: 12, weight: .medium))
                 Spacer()
                 Text("\(wordCount)/18 words")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(SpacechatAuth.isValid(phrase) ? .green : .black.opacity(0.4))
             }
+        }
+    }
+
+    /// Inside the empty field of a new account: make a phrase, or type one you already have.
+    private var generateOverlay: some View {
+        VStack(spacing: 14) {
+            Button(action: generate) {
+                VStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 24, weight: .bold))
+                        .scaleEffect(generatedPulse ? 1.14 : 1)
+                        .opacity(generatedPulse ? 1 : 0.82)
+                    Text("Generate").font(.system(size: 16, weight: .heavy, design: .rounded))
+                }
+                .foregroundColor(.black)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.black.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
+            }
+            .buttonStyle(PressableButtonStyle(scale: 0.98))
+            .accessibilityHint("Creates a new recovery phrase.")
+
+            Button {
+                manualEntry = true
+                phraseFocused = true
+            } label: {
+                Text("Type existing phrase")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.black.opacity(0.55))
+                    .underline()
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.white)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { generatedPulse = true }
         }
     }
 
@@ -280,6 +416,7 @@ struct SpacechatPhraseView: View {
         mode = nil
         phrase = ""
         revealed = false
+        manualEntry = false
         copied = false
         localError = nil
         authState.errorMessage = nil

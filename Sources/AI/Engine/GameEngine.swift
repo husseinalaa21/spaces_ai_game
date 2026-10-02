@@ -14,10 +14,10 @@ import UIKit
 @MainActor
 final class GameEngine: ObservableObject {
     // MARK: World configuration
-    static let worldSize: CGFloat = 4000
-    static let maxCollectibles = 900
+    static let worldSize: CGFloat = 2400
+    static let maxCollectibles = 340
     static let practiceDuration: Double = 30
-    static let maxGrowthDots = 700
+    static let maxGrowthDots = 260
     static let maxWanderers = 14
     static let baseSpeed: CGFloat = 130   // points/sec at radius = baseRadius
 
@@ -79,6 +79,109 @@ final class GameEngine: ObservableObject {
         player.position = CGPoint(x: GameEngine.worldSize / 2, y: GameEngine.worldSize / 2)
     }
 
+    /// The players of the current match, picked in the lobby. Used for the
+    /// rival names so the lobby, the chat and the universe all agree.
+    var crewNames: [String] = []
+    /// Recent match chat, newest last (shown top-left in the universe).
+    @Published private(set) var chatFeed: [ChatLine] = []
+    /// Everyone who played, for the results screen (the player first).
+    var finalStandings: [(name: String, radius: CGFloat, tint: RGBColor?, isYou: Bool)] {
+        var rows: [(name: String, radius: CGFloat, tint: RGBColor?, isYou: Bool)] =
+            [(player.profile.username ?? "you", player.size, nil, true)]
+        rows += rivals.map { ($0.username, $0.radius, $0.tint, false) }
+        return rows.sorted { $0.radius > $1.radius }
+    }
+    /// Players that were eaten during the match also appear in the results.
+    private(set) var eatenPlayers: [(name: String, radius: CGFloat, tint: RGBColor)] = []
+
+    /// Seconds into this match, who ate the player, and the best combo: what
+    /// the recap and the daily challenges are worked out from.
+    private(set) var matchElapsed: Double = 0
+    private(set) var eatenBy: String? = nil
+    private(set) var bestCombo: Int = 0
+
+    /// What each rival has around it, for the strategy decision (every ~15 s).
+    func strategySnapshot() -> [(name: String, size: CGFloat, biggerNear: CGFloat?, smallerNear: CGFloat?, hasFood: Bool)] {
+        rivals.map { rival in
+            func dist(_ p: CGPoint) -> CGFloat { hypot(p.x - rival.position.x, p.y - rival.position.y) }
+            var bigger: [CGFloat] = [], smaller: [CGFloat] = []
+            var others: [(CGPoint, CGFloat)] = [(player.position, player.size)]
+            others += rivals.filter { $0.id != rival.id }.map { ($0.position, $0.radius) }
+            for (pos, r) in others {
+                if r > rival.radius * 1.15 { bigger.append(dist(pos)) } else if rival.radius > r * 1.15 { smaller.append(dist(pos)) }
+            }
+            return (rival.username, rival.radius, bigger.min(), smaller.min(), nearestCollectiblePosition(to: rival.position, within: 260) != nil)
+        }
+    }
+
+    /// Applies decided styles to the players they are about.
+    func applyPlans(_ plans: [(name: String, style: AgentStyle, aggression: Double)]) {
+        for plan in plans {
+            guard let i = rivals.firstIndex(where: { $0.username == plan.name }) else { continue }
+            rivals[i].style = plan.style
+            rivals[i].aggression = min(1, max(0, plan.aggression))
+        }
+    }
+
+    /// What the person playing last typed, shown above their own dot.
+    @Published private(set) var playerMessage: String? = nil
+    @Published private(set) var playerMessageAt: Date? = nil
+
+    func playerSay(_ text: String) {
+        let name = player.profile.username ?? "you"
+        chatFeed.append(ChatLine(name: name, text: text))
+        if chatFeed.count > 30 { chatFeed.removeFirst(chatFeed.count - 30) }
+        playerMessage = text
+        playerMessageAt = Date()
+    }
+
+    /// A player says something: it goes in the feed and above their head.
+    func say(name: String, text: String) {
+        chatFeed.append(ChatLine(name: name, text: text))
+        if chatFeed.count > 30 { chatFeed.removeFirst(chatFeed.count - 30) }
+        if let i = rivals.firstIndex(where: { $0.username == name }) {
+            rivals[i].lastMessage = text
+            rivals[i].lastMessageAt = Date()
+        }
+    }
+
+    /// Points the player held when this game started, so the HUD can show what
+    /// this game earned.
+    @Published private(set) var gameStartPoints: Int = 0
+
+    /// A new game starts from the normal dot: starting size, default colour
+    /// (no form worn), no ability running, no carried-over combo or rivals.
+    /// Called when a game ends (eaten, time up or quit) and again before the
+    /// next one begins, so nothing from the last game leaks into the menu
+    /// preview or the next round. Collection progress and the points wallet
+    /// are the player's and are left alone.
+    func resetForNewGame() {
+        player.size = PlayerState.baseRadius
+        player.profile.activeFormID = nil
+        player.lastEatenID = nil
+        player.abilityEffectRemaining = 0
+        player.abilityCooldownRemaining = 0
+        player.chatBubble = nil
+        player.position = CGPoint(x: GameEngine.worldSize / 2, y: GameEngine.worldSize / 2)
+        gameStartPoints = player.profile.points
+        rivals.removeAll()
+        wanderers.removeAll()
+        collectibles.removeAll()
+        growthDots.removeAll()
+        absorbEffects.removeAll()
+        chatFeed.removeAll()
+        matchElapsed = 0; eatenBy = nil; bestCombo = 0
+        playerMessage = nil; playerMessageAt = nil
+        eatenPlayers.removeAll()
+        comboCount = 0
+        comboBannerText = nil
+        lastEatAt = nil
+        moveInput = .zero
+        playerWasEaten = false
+        roundExpired = false
+        saveManager.scheduleSave(player.profile)
+    }
+
     /// Resets the round clock and lets the world start fresh — called both
     /// right after the falling-dot intro (§ new, `mode: .practice`, a fixed
     /// short `duration`) and again the moment that practice room's timer
@@ -116,6 +219,7 @@ final class GameEngine: ObservableObject {
 
     func tick(dt: Double) {
         guard dt > 0, dt < 1, !roundExpired, !playerWasEaten else { return }
+        matchElapsed += dt
         updateMovement(dt: dt)
         updateAbilityTimers(dt: dt)
         updateWanderers(dt: dt)
@@ -211,10 +315,10 @@ final class GameEngine: ObservableObject {
 
     // MARK: - Rivals (§ new two-phase Play flow)
 
-    private static let rivalCount = 6
+    static let rivalCount = 6
     private static let rivalMinRadius: CGFloat = 12
     private static let rivalMaxRadius: CGFloat = PlayerState.maxRadius * 1.5
-    private static let rivalPalette: [RGBColor] = [
+    static let rivalPalette: [RGBColor] = [
         .hex(0xFF6B6B), .hex(0xFFC94D), .hex(0x6BCB77), .hex(0x4D96FF), .hex(0xC780FA), .hex(0xFF9F45)
     ]
 
@@ -227,8 +331,10 @@ final class GameEngine: ObservableObject {
         // style names shown under each rival in `WhiteSpaceView`), excluding
         // whatever the player is currently going by so nobody in the same
         // room ever shares a name.
-        let names = NameGenerator.uniqueNames(count: GameEngine.rivalCount,
-                                               excluding: Set([player.profile.username].compactMap { $0 }))
+        let names = crewNames.count >= GameEngine.rivalCount
+            ? Array(crewNames.prefix(GameEngine.rivalCount))
+            : NameGenerator.uniqueNames(count: GameEngine.rivalCount,
+                                         excluding: Set([player.profile.username].compactMap { $0 }))
         for i in 0..<GameEngine.rivalCount {
             let angle = (Double(i) / Double(GameEngine.rivalCount)) * 2 * .pi
             let distance: CGFloat = 260
@@ -256,21 +362,47 @@ final class GameEngine: ObservableObject {
         let speed: CGFloat = 55
         for i in rivals.indices {
             let rival = rivals[i]
-            let prey = roundMode == .final ? ([player.size > rival.radius * 1.15 ? player.position : nil]
-                + rivals.filter { $0.id != rival.id && $0.radius > rival.radius * 1.15 }.map { Optional($0.position) })
-                .compactMap { $0 }.filter { hypot($0.x - rival.position.x, $0.y - rival.position.y) < 300 }
-                .min { hypot($0.x - rival.position.x, $0.y - rival.position.y) < hypot($1.x - rival.position.x, $1.y - rival.position.y) } : nil
-            if let target = prey ?? nearestCollectiblePosition(to: rival.position, within: 260) {
+            func dist(_ p: CGPoint) -> CGFloat { hypot(p.x - rival.position.x, p.y - rival.position.y) }
+            // In the arena a clearly smaller dot eats a bigger one: bigger dots
+            // are what a player hunts, smaller dots are what it must avoid.
+            var bigger: [CGPoint] = [], smaller: [CGPoint] = []
+            if roundMode == .final {
+                var others: [(CGPoint, CGFloat)] = [(player.position, player.size)]
+                others += rivals.filter { $0.id != rival.id }.map { ($0.position, $0.radius) }
+                for (pos, r) in others {
+                    if r > rival.radius * 1.15 { bigger.append(pos) } else if rival.radius > r * 1.15 { smaller.append(pos) }
+                }
+            }
+            let aggression = CGFloat(rival.aggression)
+            let huntRange = 180 + 240 * aggression
+            let prey = bigger.filter { dist($0) < huntRange }.min { dist($0) < dist($1) }
+            let danger = smaller.filter { dist($0) < 150 + 100 * (1 - aggression) }.min { dist($0) < dist($1) }
+            let food = nearestCollectiblePosition(to: rival.position, within: 260)
+            var target: CGPoint? = nil
+            var fleeing = false
+            var speedFactor: CGFloat = 1
+            switch rival.style {
+            case .farm:
+                target = food
+            case .hunt:
+                if let danger, aggression < 0.6 { target = danger; fleeing = true } else { target = prey ?? food }
+                speedFactor = 1 + 0.25 * aggression
+            case .flee:
+                if let danger { target = danger; fleeing = true } else { target = food }
+            case .ambush:
+                if let prey, dist(prey) < 170 { target = prey; speedFactor = 1.6 } else { speedFactor = 0.15; target = nil }
+            }
+            if let target {
                 let dx = target.x - rivals[i].position.x
                 let dy = target.y - rivals[i].position.y
-                rivals[i].heading = atan2(dy, dx)
+                rivals[i].heading = fleeing ? atan2(-dy, -dx) : atan2(dy, dx)
             } else if Double.random(in: 0...1) < 0.02 {
                 rivals[i].heading += CGFloat.random(in: -0.7...0.7)
             }
 
             var pos = rivals[i].position
-            pos.x += cos(rivals[i].heading) * speed * CGFloat(dt)
-            pos.y += sin(rivals[i].heading) * speed * CGFloat(dt)
+            pos.x += cos(rivals[i].heading) * speed * speedFactor * CGFloat(dt)
+            pos.y += sin(rivals[i].heading) * speed * speedFactor * CGFloat(dt)
             pos.x = min(max(pos.x, 0), GameEngine.worldSize)
             pos.y = min(max(pos.y, 0), GameEngine.worldSize)
             rivals[i].position = pos
@@ -323,6 +455,7 @@ final class GameEngine: ObservableObject {
             guard dist <= touchDistance else { continue }
 
             if rival.radius > player.size * sizeMargin {
+                eatenPlayers.append((rival.username, rival.radius, rival.tint))
                 rivals.remove(at: i)
                 absorbEffects.append(AbsorbEffect(startPosition: rival.position, color: rival.tint, magnitude: rival.radius))
                 // A clearly bigger bump than a single collectible bite (§ user
@@ -335,6 +468,7 @@ final class GameEngine: ObservableObject {
                 AudioManager.shared.playEat()
             } else if player.size > rival.radius * sizeMargin {
                 playerWasEaten = true
+                eatenBy = rival.username
                 HapticsManager.shared.impact(.medium)
                 return
             }
@@ -402,6 +536,7 @@ final class GameEngine: ObservableObject {
         let now = Date()
         if let last = lastEatAt, now.timeIntervalSince(last) <= GameEngine.comboWindow {
             comboCount += 1
+            bestCombo = max(bestCombo, comboCount)
         } else {
             comboCount = 1
         }

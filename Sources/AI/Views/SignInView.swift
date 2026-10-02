@@ -13,6 +13,20 @@ import AuthenticationServices
 struct SignInView: View {
     @ObservedObject var authState: AuthState
     let onSignedIn: () -> Void
+    /// Set when the page is opened on demand from the "Log in" button (see
+    /// `LogInButton`) rather than shown as the launch screen. That changes two
+    /// things: there is a close button to go back without choosing anything,
+    /// and the "Continue without an account" route is dropped — the player
+    /// opening this is already playing as a guest.
+    let onClose: (() -> Void)?
+
+    /// Written out so `SignInView(authState:) { … }` keeps meaning "the
+    /// sign-in closure" at the launch call site, whatever is added after it.
+    init(authState: AuthState, onSignedIn: @escaping () -> Void, onClose: (() -> Void)? = nil) {
+        self.authState = authState
+        self.onSignedIn = onSignedIn
+        self.onClose = onClose
+    }
 
     @State private var showPhraseSheet = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -74,11 +88,13 @@ struct SignInView: View {
                 .overlay(Capsule().stroke(Color.black.opacity(0.18), lineWidth: 1.5))
                 .clipShape(Capsule())
 
-                Button(action: continueAsGuest) {
-                    Text("Continue without an account")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundColor(.black.opacity(0.55))
-                        .frame(width: 260, height: 40)
+                if onClose == nil {
+                    Button(action: continueAsGuest) {
+                        Text("Continue without an account")
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .foregroundColor(.black.opacity(0.55))
+                            .frame(width: 260, height: 40)
+                    }
                 }
 
                 if let message = authState.errorMessage {
@@ -88,6 +104,21 @@ struct SignInView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
                 }
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if let onClose {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.black.opacity(0.7))
+                        .frame(width: 36, height: 36)
+                        .background(Color.black.opacity(0.06), in: Circle())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .padding(.leading, 16)
+                .padding(.top, 12)
+                .accessibilityLabel("Close")
             }
         }
         .sheet(isPresented: $showPhraseSheet) { phraseSheet }
@@ -101,5 +132,36 @@ struct SignInView: View {
     private func continueAsGuest() {
         authState.continueAsGuest()
         onSignedIn()
+    }
+}
+
+/// The "Log in" button that opens the login page (`SignInView`) on demand.
+///
+/// Sits under Play on the home page and under the Account card in Settings —
+/// one view, so the two can't drift apart. Shown only while the player is
+/// playing as a guest (`AuthState.isGuest`): once there is an account there is
+/// nothing to log in to, and Settings already has its own Sign Out.
+///
+/// A compact pill rather than another full-width capsule: on the home page
+/// Play already sits at the bottom of the tallest phones, so the button under
+/// it has to be small, and it should read as secondary to Play anyway.
+struct LogInButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "person.crop.circle")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Log in")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+            }
+            .foregroundColor(.black.opacity(0.75))
+            .padding(.horizontal, 22)
+            .frame(height: 36)
+            .background(Color.black.opacity(0.07), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressableButtonStyle())
     }
 }
