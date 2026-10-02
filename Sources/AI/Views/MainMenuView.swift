@@ -129,7 +129,10 @@ struct MainMenuView: View {
                         Image(systemName: "pencil")
                             .font(.system(size: 11, weight: .semibold))
                     }
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.black.opacity(0.6))
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(Color.white.opacity(0.75), in: Capsule())
+                    .overlay(Capsule().stroke(Color.black.opacity(0.08), lineWidth: 1))
                 }
                 .buttonStyle(PressableButtonStyle(scale: 0.97))
 
@@ -197,9 +200,10 @@ struct MainMenuView: View {
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
                     }
                     .foregroundColor(.black)
-                    .frame(width: 220, height: 48)
+                    .frame(width: 260, height: 50)
                 }
-                .overlay(Capsule().stroke(Color.black.opacity(0.18), lineWidth: 1.5))
+                .background(Color.white.opacity(0.75), in: Capsule())
+                .overlay(Capsule().stroke(Color.black.opacity(0.10), lineWidth: 1))
                 .clipShape(Capsule())
                 .buttonStyle(PressableButtonStyle())
                 .padding(.bottom, 12)
@@ -208,11 +212,12 @@ struct MainMenuView: View {
                     Text("Play")
                         .font(.system(size: 19, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
-                        .frame(width: 220, height: 54)
+                        .frame(width: 260, height: 58)
                 }
-                .background(Color.black)
+                .background(LinearGradient(colors: [Color(white: 0.20), Color(white: 0.04)], startPoint: .top, endPoint: .bottom))
+                .overlay(Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1))
                 .clipShape(Capsule())
-                .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
+                .shadow(color: .black.opacity(0.18), radius: 14, y: 8)
                 .buttonStyle(PressableButtonStyle())
                 .padding(.bottom, authState.isGuest ? 8 : 40)
 

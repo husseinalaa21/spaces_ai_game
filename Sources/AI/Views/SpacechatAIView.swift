@@ -102,6 +102,11 @@ struct SpacechatAIView: View {
         HStack {
             iconButton("line.3.horizontal", label: "Conversation history") { inputFocused = false; showHistory = true }
             Spacer()
+            HStack(spacing: 8) {
+                DotsAgentAvatar(size: 24)
+                Text("Dots").font(.system(size: 17, weight: .heavy, design: .rounded))
+            }
+            Spacer()
             iconButton("plus", label: "New conversation") { newConversation() }
         }
         .padding(.horizontal, 16).padding(.vertical, 6)
@@ -119,43 +124,76 @@ struct SpacechatAIView: View {
         .accessibilityLabel(label)
     }
 
+    /// The starting choices: each has its own colour and its own shaped dot, so the page reads as a set of
+    /// different things to try rather than one list.
+    private struct Option: Identifiable {
+        let id: String
+        let title: String
+        let caption: String
+        let shape: DotShape
+        let hue: Double
+        let mode: String
+        let prompt: String?
+    }
+
+    private static let options: [Option] = [
+        Option(id: "grow", title: "Grow faster", caption: "Tips to level up", shape: .star5, hue: 0.60, mode: "Chat", prompt: "How do I grow faster in Spaces?"),
+        Option(id: "dot", title: "Design a dot", caption: "A new look for you", shape: .heart, hue: 0.92, mode: "Dot", prompt: "A glossy ocean-blue dot with silver stars"),
+        Option(id: "universe", title: "Design a universe", caption: "Your own world", shape: .hexagon, hue: 0.76, mode: "Universe", prompt: "A sunset world with a warm golden grid"),
+        Option(id: "eat", title: "How eating works", caption: "Merge and win", shape: .flower5, hue: 0.36, mode: "Chat", prompt: "Explain how eating and merging works in Spaces."),
+        Option(id: "shapes", title: "Dot shapes", caption: "What each one is", shape: .diamond, hue: 0.50, mode: "Chat", prompt: "What are the different dot shapes and how do I get them?"),
+        Option(id: "challenge", title: "Daily challenge", caption: "Something to try", shape: .bolt, hue: 0.10, mode: "Chat", prompt: "Give me a fun challenge to try in my next match.")
+    ]
+
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Spacer()
-            DotsAgentAvatar(size: 72)
-            Text("What can I help with?")
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-            Text("Ask Dots anything about Spaces, or have it design a dot or a universe for you.")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.black.opacity(0.5))
-                .multilineTextAlignment(.center)
+        ScrollView {
             VStack(spacing: 8) {
-                suggestion("How do I grow faster in Spaces?", mode: "Chat")
-                suggestion("Design me a new dot", mode: "Dot", prompt: "A glossy ocean-blue dot with silver stars")
-                suggestion("Design me a universe", mode: "Universe", prompt: "A sunset world with a warm golden grid")
-            }.padding(.top, 8)
-            Spacer(); Spacer()
+                ZStack {
+                    ForEach(Array(Self.options.enumerated()), id: \.element.id) { index, option in
+                        FloatingDot(shape: option.shape, hue: option.hue, index: index)
+                    }
+                    DotsAgentAvatar(size: 92)
+                }
+                .frame(height: 150).padding(.top, 14)
+                Text("What can I help with?")
+                    .font(.system(size: 26, weight: .heavy, design: .rounded))
+                Text("Ask Dots anything about Spaces, or have it design a dot or a universe for you.")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.black.opacity(0.5))
+                    .multilineTextAlignment(.center).padding(.horizontal, 10)
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                    ForEach(Self.options) { option in optionCard(option) }
+                }
+                .padding(.top, 18)
+            }
+            .padding(.horizontal, 18).padding(.bottom, 12)
         }
-        .padding(.horizontal, 24)
+        .scrollDismissesKeyboard(.interactively)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .contentShape(Rectangle())
         .onTapGesture { inputFocused = false }
     }
 
-    private func suggestion(_ title: String, mode newMode: String, prompt: String? = nil) -> some View {
-        Button {
-            mode = newMode
-            if let prompt { draft = prompt } else { draft = title }
-            if newMode == "Chat" { send() } else { inputFocused = true }
+    private func optionCard(_ option: Option) -> some View {
+        let tint = Color(hue: option.hue, saturation: 0.5, brightness: 1.0)
+        let ink = Color(hue: option.hue, saturation: 0.8, brightness: 0.42)
+        return Button {
+            mode = option.mode
+            draft = option.prompt ?? option.title
+            if option.mode == "Chat" { send() } else { inputFocused = true }
         } label: {
-            Text(title)
-                .font(.system(size: 13.5, weight: .medium))
-                .foregroundColor(.black)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14).padding(.vertical, 11)
-                .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+            VStack(alignment: .leading, spacing: 10) {
+                ShapedDot(shape: option.shape, hue: option.hue, size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(option.title).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(ink)
+                    Text(option.caption).font(.system(size: 12, weight: .medium)).foregroundColor(ink.opacity(0.65))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(tint.opacity(0.32), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
-        .buttonStyle(.plain).disabled(isThinking)
+        .buttonStyle(PressableButtonStyle(scale: 0.97))
+        .disabled(isThinking)
     }
 
     private var conversation: some View {
@@ -186,14 +224,21 @@ struct SpacechatAIView: View {
     private func bubble(_ message: SpacesAIMessage) -> some View {
         let mine = message.role == "user"
         return HStack(alignment: .top, spacing: 8) {
-            if mine { Spacer(minLength: 40) } else { DotsAgentAvatar(size: 30) }
+            if mine { Spacer(minLength: 48) } else { DotsAgentAvatar(size: 30) }
             Text(message.text)
-                .font(.system(size: 14.5))
+                .font(.system(size: 15))
                 .foregroundColor(mine ? .white : .black)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(mine ? Self.blue : Self.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(.horizontal, 15).padding(.vertical, 11)
+                .background {
+                    if mine {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(LinearGradient(colors: [Color(red: 0.36, green: 0.58, blue: 1.0), Self.blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    } else {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Self.field)
+                    }
+                }
                 .textSelection(.enabled)
-            if !mine { Spacer(minLength: 40) }
+            if !mine { Spacer(minLength: 48) }
         }
     }
 
@@ -494,5 +539,45 @@ extension SpacechatAIView {
                 }
             }
         }.padding(.vertical, 16)
+    }
+}
+
+
+/// A dot of one of the game's shapes: glossy fill, a strong border, no shadow.
+struct ShapedDot: View {
+    let shape: DotShape
+    let hue: Double
+    var size: CGFloat = 40
+    var body: some View {
+        let light = Color(hue: hue, saturation: 0.4, brightness: 1.0)
+        let mid = Color(hue: hue, saturation: 0.72, brightness: 0.96)
+        let dark = Color(hue: hue, saturation: 0.85, brightness: 0.6)
+        Canvas { ctx, s in
+            let r = min(s.width, s.height) / 2 - size * 0.05
+            let path = DotShape.path(shape, radius: r).offsetBy(dx: s.width / 2, dy: s.height / 2)
+            ctx.fill(path, with: .linearGradient(Gradient(colors: [light, mid]), startPoint: CGPoint(x: s.width * 0.25, y: 0), endPoint: CGPoint(x: s.width * 0.8, y: s.height)))
+            ctx.stroke(path, with: .color(dark), style: StrokeStyle(lineWidth: max(1.5, size * 0.06), lineJoin: .round))
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Small dots drifting around the page's hero, each on its own slow loop. They stay still with Reduce Motion on.
+private struct FloatingDot: View {
+    let shape: DotShape
+    let hue: Double
+    let index: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let angle = Double(index) / 6 * 2 * .pi - .pi / 2
+        let radius: CGFloat = 108
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { timeline in
+            let t = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
+            let wobble = CGFloat(sin(t * 0.9 + Double(index) * 1.3)) * 5
+            ShapedDot(shape: shape, hue: hue, size: 24 + CGFloat(index % 3) * 4)
+                .offset(x: cos(angle) * radius + wobble, y: sin(angle) * radius * 0.66 + CGFloat(cos(t * 0.8 + Double(index))) * 4)
+        }
     }
 }

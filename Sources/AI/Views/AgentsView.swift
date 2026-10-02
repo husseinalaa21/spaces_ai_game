@@ -33,7 +33,7 @@ struct AgentsView: View {
                         teamCard
                         ForEach(store.all) { agent in
                             Button { chatting = agent } label: { row(agent) }
-                                .buttonStyle(.plain)
+                                .buttonStyle(PressableButtonStyle(scale: 0.98))
                                 .contextMenu {
                                     if !agent.builtIn { Button("Delete agent", systemImage: "trash", role: .destructive) { store.delete(agent) } }
                                 }
@@ -84,8 +84,12 @@ struct AgentsView: View {
                 Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundColor(.black.opacity(0.3))
             }
             .padding(16)
-            .background(DotRenderer.defaultColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        }.buttonStyle(.plain)
+            .background {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(LinearGradient(colors: [Color(red: 0.36, green: 0.58, blue: 1.0).opacity(0.30), Color(red: 0.74, green: 0.45, blue: 0.98).opacity(0.18)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            }
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color(red: 0.36, green: 0.58, blue: 1.0).opacity(0.35), lineWidth: 1))
+        }.buttonStyle(PressableButtonStyle(scale: 0.98))
     }
 
     private func row(_ agent: SpacesAgent) -> some View {
@@ -102,7 +106,12 @@ struct AgentsView: View {
             Spacer(minLength: 0)
         }
         .padding(14)
-        .background(Color(white: 0.96), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background {
+            // Tinted with the agent's own colour, strongest where its avatar sits.
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(LinearGradient(colors: [agent.color.opacity(0.26), agent.color.opacity(0.07)], startPoint: .leading, endPoint: .trailing))
+        }
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(agent.color.opacity(0.28), lineWidth: 1))
     }
 
     private var notice: some View {

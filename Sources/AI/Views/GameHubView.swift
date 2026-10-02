@@ -24,6 +24,7 @@ struct GameHubView: View {
     @StateObject private var agentsStore = AgentsStore()
     @ObservedObject private var folderStore = FolderStore.shared
     @Environment(\.scenePhase) private var scenePhase
+    @Namespace private var tabSpace
 
     enum Tab: Int, CaseIterable, Identifiable {
         case home = 0
@@ -55,8 +56,8 @@ struct GameHubView: View {
             .safeAreaInsets
     }
 
-    /// The app opens on Messages, where the agents are. After a match it comes back to Home, where Play is.
-    @MainActor static var openTab: Tab = .messages
+    /// The app opens on Home, the first page, where Play is. A match also comes back to Home.
+    @MainActor static var openTab: Tab = .home
     @State private var tab: Tab = GameHubView.openTab
     /// The login page, opened from the "Log in" button on Home and Settings.
     /// Presented over the hub rather than by swapping `RootView`'s phase, so
@@ -163,7 +164,15 @@ struct GameHubView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
-        .background(Color(white: 0.93), in: Capsule())
+        .background {
+            // Frosted glass with a hairline edge, floating over the page, instead of a flat grey slab.
+            ZStack {
+                Capsule().fill(.ultraThinMaterial)
+                Capsule().fill(Color.white.opacity(0.62))
+            }
+        }
+        .overlay(Capsule().stroke(Color.black.opacity(0.07), lineWidth: 1))
+        .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 4)
     }
 
     private func tabButton<Icon: View>(_ target: Tab, label: String, @ViewBuilder icon: () -> Icon) -> some View {
@@ -175,10 +184,17 @@ struct GameHubView: View {
             }
             HapticsManager.shared.impact(.light)
         } label: {
-            icon()
-                .foregroundColor(tab == target ? .black : .black.opacity(0.32))
-                .frame(width: 42, height: 34)
-                .contentShape(Rectangle())
+            ZStack {
+                // The highlight slides from one tab to the next.
+                if tab == target {
+                    Capsule().fill(Color.black.opacity(0.09))
+                        .matchedGeometryEffect(id: "tabHighlight", in: tabSpace)
+                }
+                icon()
+                    .foregroundColor(tab == target ? .black : .black.opacity(0.34))
+            }
+            .frame(width: 46, height: 36)
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
