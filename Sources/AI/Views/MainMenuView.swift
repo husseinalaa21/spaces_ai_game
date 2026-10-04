@@ -1347,6 +1347,7 @@ struct StoreView: View {
     var save: () -> Void
     @State private var showSignInGate = false
     @ObservedObject private var themes = DotThemeStore.shared
+    @ObservedObject private var spaces = WorkspaceStore.shared
     @Environment(\.dismiss) private var dismiss
 
     private let columns = [GridItem(.adaptive(minimum: 92), spacing: 12)]
@@ -1568,10 +1569,24 @@ struct StoreView: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("UNIVERSES")
             LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(StoreGoods.paidUniverses) { theme in
-                    VStack(spacing: 4) {
-                        tile(name: theme.displayName, id: StoreGoods.universeID(theme)) { UniverseTile(theme: theme) }
-                        pointsButton(StoreGoods.universeID(theme), price: StoreGoods.universePoints)
+                ForEach(UniverseTheme.allCases) { theme in
+                    let owned = theme == .white || store.has(StoreGoods.universeID(theme))
+                    VStack(spacing: 7) {
+                        UniverseTile(theme: theme)
+                        Text(theme.displayName).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundColor(.black.opacity(0.75)).lineLimit(1)
+                        if owned {
+                            if spaces.current.theme == theme {
+                                Label("In use", systemImage: "checkmark.circle.fill").font(.system(size: 11, weight: .semibold)).foregroundColor(.green)
+                            } else {
+                                Button { var next = spaces.current; next.theme = theme; withAnimation { spaces.update(next) }; HapticsManager.shared.success() } label: {
+                                    Text(theme == .white ? "Use default" : "Apply").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundColor(.white)
+                                        .padding(.horizontal, 14).padding(.vertical, 6).background(Color.black, in: Capsule())
+                                }.buttonStyle(PressableButtonStyle(scale: 0.95))
+                            }
+                        } else {
+                            buyButton(StoreGoods.universeID(theme), compact: true)
+                            pointsButton(StoreGoods.universeID(theme), price: StoreGoods.universePoints)
+                        }
                     }
                 }
             }

@@ -24,12 +24,10 @@ struct AgentMapView: View {
     @State private var showNew = false
     @State private var openNode: NodeRef?
     @State private var renaming: Topic?
-    @State private var editingSpace: Workspace?
     @State private var editingDot: SpacesAgent?
     @State private var showMembers = false
     @ObservedObject private var shop = StoreManager.shared
     @State private var creatingDot = false
-    @State private var creatingSpace = false
     @State private var renameText = ""
 
     private var workspace: Workspace { workspaces.current }
@@ -170,22 +168,6 @@ struct AgentMapView: View {
         .sheet(isPresented: $creatingDot) { DotEditorView(store: agents, agent: nil) { creatingDot = false } }
         .sheet(item: $editingDot) { dot in DotEditorView(store: agents, agent: dot) { editingDot = nil } }
         .sheet(isPresented: $showMembers) { MembersOnlySheet() }
-        .sheet(isPresented: $creatingSpace) {
-            WorkspaceSheet(agents: agents.all, space: nil) { name, theme, team in
-                creatingSpace = false
-                withAnimation(.easeInOut(duration: 0.3)) { workspaces.add(name: name, theme: theme, team: team) }
-                recenter()
-            }
-            .presentationDetents([.large])
-        }
-        .sheet(item: $editingSpace) { space in
-            WorkspaceSheet(agents: agents.all, space: space) { name, theme, team in
-                var next = space; next.name = name; next.theme = theme; next.team = team
-                editingSpace = nil
-                withAnimation(.easeInOut(duration: 0.3)) { workspaces.update(next) }
-            }
-            .presentationDetents([.large])
-        }
         .alert("Rename topic", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Topic", text: $renameText)
             Button("Save") { if let t = renaming { topics.rename(t.id, to: renameText) }; renaming = nil }
@@ -481,7 +463,6 @@ struct AgentMapView: View {
     private var topBar: some View {
         VStack(spacing: 8) {
             Color.clear.frame(height: GameHubView.bannerTopInset + 50)
-            HStack { workspacePill; Spacer() }.padding(.horizontal, 16)
             if authState.spacechatUsername == nil {
                 Button { onLogin() } label: {
                     Label("Log in with Spacechat so the dots can work", systemImage: "person.crop.circle.badge.checkmark")
@@ -496,42 +477,6 @@ struct AgentMapView: View {
                     .opacity(touched ? 0 : 1).animation(.easeOut(duration: 0.4), value: touched)
             }
         }
-    }
-
-    /// The current workspace, with a menu to switch, make a new one or change this one.
-    private var workspacePill: some View {
-        Menu {
-            ForEach(workspaces.all) { space in
-                Button {
-                    HapticsManager.shared.impact(.light)
-                    withAnimation(.easeInOut(duration: 0.3)) { workspaces.select(space.id) }
-                    recenter()
-                } label: {
-                    if space.id == workspace.id { Label(space.name, systemImage: "checkmark") } else { Text(space.name) }
-                }
-            }
-            Divider()
-            Button("New workspace…", systemImage: "plus") { creatingSpace = true }
-            Button("Edit this workspace…", systemImage: "slider.horizontal.3") { editingSpace = workspace }
-            if workspaces.all.count > 1 {
-                Button("Delete this workspace", systemImage: "trash", role: .destructive) {
-                    let id = workspace.id
-                    withAnimation { workspaces.delete(id) }
-                    topics.deleteAll(in: id)
-                }
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Circle().fill(workspace.theme.swatchColor).frame(width: 16, height: 16)
-                    .overlay(Circle().stroke(ink.opacity(0.25), lineWidth: 1))
-                Text(workspace.name).font(.system(size: 14, weight: .bold)).foregroundColor(ink).lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10, weight: .bold)).foregroundColor(ink.opacity(0.5))
-            }
-            .padding(.horizontal, 12).frame(height: 36)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().stroke(ink.opacity(0.1)))
-        }
-        .accessibilityLabel("Workspace: \(workspace.name)")
     }
 
     private func bottomBar(_ scene: Layout) -> some View {
@@ -753,99 +698,5 @@ private struct NodeSheet: View {
         case .done: Label("Done", systemImage: "checkmark.circle.fill").font(.system(size: 12, weight: .bold)).foregroundColor(.green)
         case .failed: Label("Failed", systemImage: "exclamationmark.circle.fill").font(.system(size: 12, weight: .bold)).foregroundColor(.red)
         }
-    }
-}
-
-
-// MARK: - Workspace
-
-/// Make or change a workspace: its name, its look (the old universes) and which dots are on its map.
-private struct WorkspaceSheet: View {
-    let agents: [SpacesAgent]
-    let space: Workspace?
-    let onSave: (String, UniverseTheme, [String]?) -> Void
-
-    @State private var name = ""
-    @State private var theme: UniverseTheme = .white
-    @State private var chosen: Set<String> = []
-    @FocusState private var focused: Bool
-    @ObservedObject private var shop = StoreManager.shared
-    @State private var buying: BuyTarget?
-
-    private func lookOpen(_ item: UniverseTheme) -> Bool { item == .white || shop.has(StoreGoods.universeID(item)) || item == space?.theme }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Name") { TextField("Like \"School\" or \"My shop\"", text: $name).focused($focused) }
-                Section("Look") {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 14) {
-                            ForEach(UniverseTheme.allCases) { item in
-                                Button {
-                                    if lookOpen(item) { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { theme = item } }
-                                    else { buying = BuyTarget(id: StoreGoods.universeID(item), title: item.displayName + " universe", blurb: "A new look for your spaces.") }
-                                } label: {
-                                    VStack(spacing: 6) {
-                                        tile(item).opacity(lookOpen(item) ? 1 : 0.55)
-                                            .overlay { if !lookOpen(item) { Image(systemName: "lock.fill").font(.system(size: 15, weight: .bold)).foregroundColor(.primary) } }
-                                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(theme == item ? Color.primary : .clear, lineWidth: 3).padding(-3))
-                                        Text(lookOpen(item) ? item.displayName : (shop.price(for: StoreGoods.universeID(item)) ?? item.displayName)).font(.system(size: 11, weight: .bold)).foregroundColor(.primary)
-                                    }
-                                }.buttonStyle(.plain)
-                            }
-                        }.padding(.vertical, 8).padding(.horizontal, 4)
-                    }
-                }
-                Section("Dots on this map") {
-                    ForEach(agents, id: \.id) { agent in
-                        Toggle(isOn: Binding(get: { chosen.contains(agent.id) }, set: { on in if on { chosen.insert(agent.id) } else if chosen.count > 1 { chosen.remove(agent.id) } })) {
-                            HStack(spacing: 10) {
-                                AgentAvatar(agent: agent, size: 30)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(agent.name).font(.system(size: 14, weight: .semibold))
-                                    Text(agent.role).font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle(space == nil ? "New workspace" : "Workspace")
-            .navigationBarTitleDisplayMode(.inline)
-            .sheet(item: $buying) { QuickBuySheet(target: $0) }
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(space == nil ? "Create" : "Save") {
-                        let all = Set(agents.map(\.id))
-                        onSave(name, theme, chosen == all ? nil : Array(chosen))
-                    }.fontWeight(.bold).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-            .onAppear {
-                if let space {
-                    name = space.name; theme = space.theme
-                    chosen = space.team.map(Set.init) ?? Set(agents.map(\.id))
-                } else {
-                    chosen = Set(agents.map(\.id)); focused = true
-                }
-            }
-        }
-    }
-
-    /// A little window onto the look: its background and grid.
-    private func tile(_ item: UniverseTheme) -> some View {
-        let palette = WorldBackground.palette(for: item)
-        return ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(palette.background)
-            Canvas { ctx, size in
-                var x: CGFloat = 8
-                while x < size.width { var y: CGFloat = 8; while y < size.height { ctx.fill(Path(ellipseIn: CGRect(x: x - 1, y: y - 1, width: 2, height: 2)), with: .color(palette.line)); y += 14 }; x += 14 }
-            }
-            Circle().fill(item.swatchColor).frame(width: 22, height: 22).overlay(Circle().stroke(Color.black.opacity(0.15)))
-        }
-        .frame(width: 64, height: 64)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.black.opacity(0.12), lineWidth: 1))
     }
 }
