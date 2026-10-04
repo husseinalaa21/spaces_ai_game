@@ -161,17 +161,17 @@ final class AgentRunner: ObservableObject {
 
     /// One dot does its part of a topic and answers with its result (no chat, no folder). It may take a few turns to look things up
     /// or note something; the text it said is what is handed on.
-    func handOff(agent: SpacesAgent, message: String, store: AgentsStore, copy: Bool = false) async -> (ok: Bool, text: String) {
+    func handOff(agent: SpacesAgent, message: String, store: AgentsStore, copy: Bool = false, folder: String? = nil, canEdit: Bool = false) async -> (ok: Bool, text: String) {
         var outcome = Outcome()
         var said: [String] = []
-        for step in 1...3 {
+        for step in 1...(folder == nil ? 3 : 5) {
             if Task.isCancelled { break }
             do {
-                let turn = try await ask(agent: agent, team: [agent], task: message, folder: nil, canEdit: false, outcome: outcome,
+                let turn = try await ask(agent: agent, team: [agent], task: message, folder: folder, canEdit: canEdit, outcome: outcome,
                                          step: step, lead: true, notes: store.notes, transcript: [], copy: copy)
                 if let text = turn.text, !text.isEmpty { said.append(text) }
                 if turn.done, !turn.summary.isEmpty, !said.contains(turn.summary) { said.append(turn.summary) }
-                outcome = await carryOut(turn.actions, agent: agent, folder: nil, store: store) { _ in }
+                outcome = await carryOut(turn.actions, agent: agent, folder: folder, store: store) { _ in }
                 if outcome.isEmpty || outcome.asked || turn.done { break }
             } catch {
                 return (false, Self.explain(error))
@@ -185,7 +185,7 @@ final class AgentRunner: ObservableObject {
 
     /// Starts one copy of `agent` for each small job (at most ten), a few at a time, and gathers what they made.
     /// Each copy is the same dot (same role, bio and instructions) and talks to the same model; it cannot start copies of its own.
-    private func runCopies(of agent: SpacesAgent, jobs: [String], store: AgentsStore, note: @escaping (AgentMessage) -> Void) async -> String {
+    private func runCopies(of agent: SpacesAgent, jobs: [String], store: AgentsStore, folder: String?, canEdit: Bool, note: @escaping (AgentMessage) -> Void) async -> String {
         let base = copies.count
         let started = jobs.enumerated().map { CopyJob(parentID: agent.id, parentName: agent.name, number: base + $0.offset + 1, task: $0.element) }
         copies += started
@@ -199,7 +199,7 @@ final class AgentRunner: ObservableObject {
                 group.addTask { [weak self] in
                     guard let self else { return (index, "") }
                     let message = "You are a copy of \(agent.name), started for ONE small job: \(job.task)\nDo only that job and answer with the result."
-                    let outcome = await self.handOff(agent: agent, message: message, store: store, copy: true)
+                    let outcome = await self.handOff(agent: agent, message: message, store: store, copy: true, folder: folder, canEdit: canEdit)
                     await MainActor.run {
                         if let i = self.copies.firstIndex(where: { $0.id == job.id }) {
                             self.copies[i].status = outcome.ok ? .done : .failed
@@ -329,7 +329,7 @@ final class AgentRunner: ObservableObject {
                 let jobs = Array(action.tasks.prefix(Self.maxCopies))
                 guard !jobs.isEmpty else { continue }
                 note(system("\(name) is starting \(jobs.count) cop\(jobs.count == 1 ? "y" : "ies") for small jobs."))
-                let results = await runCopies(of: agent, jobs: jobs, store: store, note: note)
+                let results = await runCopies(of: agent, jobs: jobs, store: store, folder: folder, canEdit: folder != nil && access.write, note: note)
                 outcome.results.append(("spawn", "\(jobs.count) copies", results))
 
             case "ask":

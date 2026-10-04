@@ -10,10 +10,19 @@ struct TeamFlowView: View {
     let workspace: Workspace
     /// A saved project opens straight in its room.
     var project: Project? = nil
+    /// Opened from a folder: the space belongs to that folder (its own team, files and conversation history).
+    var folderName: String? = nil
     let onLogin: () -> Void
     let onClose: () -> Void
 
     @State private var team: [SpacesAgent]?
+
+    /// The project to restore: the one given, or the folder's own space from last time.
+    private var existing: Project? {
+        if let project { return project }
+        guard let folderName else { return nil }
+        return projects.projects.first { $0.linkedFolder == folderName }
+    }
 
     private var available: [SpacesAgent] {
         guard let ids = workspace.team else { return agents.all }
@@ -25,7 +34,7 @@ struct TeamFlowView: View {
         ZStack {
             if let team {
                 ProjectRoomView(team: team, agents: agents, folders: folders, projects: projects, authState: authState,
-                                workspace: workspace, project: project, onLogin: onLogin, onClose: onClose)
+                                workspace: workspace, project: existing, forFolder: folderName ?? project?.linkedFolder, onLogin: onLogin, onClose: onClose)
                     .transition(.opacity.combined(with: .scale(scale: 1.03)))
             } else {
                 TeamLobbyView(agents: available, palette: WorldBackground.palette(for: workspace.theme), onStart: { picked in
@@ -35,7 +44,7 @@ struct TeamFlowView: View {
             }
         }
         .onAppear {
-            if let project, team == nil {
+            if let project = existing, team == nil {
                 let restored = project.teamIDs.compactMap { id in agents.all.first { $0.id == id } }
                 team = restored.isEmpty ? Array(available.prefix(1)) : restored
             }
@@ -315,6 +324,8 @@ struct ProjectRoomView: View {
     @ObservedObject var authState: AuthState
     let workspace: Workspace
     let project: Project?
+    /// A folder's own space: the team works on this folder's real files.
+    var forFolder: String? = nil
     let onLogin: () -> Void
     let onClose: () -> Void
 
@@ -374,9 +385,10 @@ struct ProjectRoomView: View {
         .overlay(alignment: .bottom) { ApprovalCard().padding(.bottom, 80) }
         .preferredColorScheme(palette.isDark ? .dark : .light)
         .task { await begin() }
+        .onDisappear { if forFolder != nil, !messages.isEmpty { autoSave() } }
         .onChange(of: runner.copies) { jobs in
             // every finished copy leaves its own file in the folder
-            guard let folder else { return }
+            guard forFolder == nil, let folder else { return }
             for job in jobs where job.status == .done {
                 _ = try? FolderStore.shared.write(folder, "copies/\(job.name.lowercased())-\(job.parentName.lowercased())-copy.md", content: "# \(job.name), a copy of \(job.parentName)\n\nJob: \(job.task)\n\n\(job.result)\n", by: job.parentName)
             }
@@ -387,7 +399,7 @@ struct ProjectRoomView: View {
             // A lead that never closed the task still left its last words: the best summary there is.
             if summary.isEmpty, let last = work.last(where: { $0.kind == .agent && $0.from == lead.name && $0.text.count > 40 }) { summary = last.text }
             if summary.isEmpty, let last = work.last(where: { $0.kind == .agent && $0.text.count > 40 }) { summary = last.text }
-            if !summary.isEmpty { writeFiles() }
+            if forFolder != nil { autoSave() } else if !summary.isEmpty { writeFiles() }
             withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) { step = .done }
             if !summary.isEmpty { HapticsManager.shared.success() }
         }
@@ -561,12 +573,18 @@ struct ProjectRoomView: View {
             if authState.spacechatUsername == nil && summary.isEmpty {
                 Button("Log in with Spacechat") { onLogin() }.font(.system(size: 14, weight: .bold))
             }
-            if let folder {
+            if let folder, forFolder == nil {
                 Label("Work saved in the folder “\(folder)”", systemImage: "folder.fill").font(.system(size: 12.5, weight: .semibold)).foregroundColor(ink.opacity(0.6))
             } else if !filesNote.isEmpty {
                 Text(filesNote).font(.system(size: 12)).foregroundColor(.orange)
             }
-            if saved {
+            if forFolder != nil {
+                Label("This folder's space is saved: its team, files and history", systemImage: "checkmark").font(.system(size: 12.5, weight: .bold)).foregroundColor(.green)
+                Button { onClose() } label: {
+                    Text("Back to the folder").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(ink)
+                        .frame(maxWidth: .infinity).frame(height: 44).background(ink.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }.buttonStyle(PressableButtonStyle())
+            } else if saved {
                 Label("Saved to your home page", systemImage: "checkmark").font(.system(size: 13, weight: .bold)).foregroundColor(.green)
             } else if !summary.isEmpty {
                 Text("Save this project to your home page?").font(.system(size: 13, weight: .semibold)).foregroundColor(ink.opacity(0.6))
@@ -586,7 +604,8 @@ struct ProjectRoomView: View {
             Text("Want changes? Tell the team below.").font(.system(size: 12)).foregroundColor(ink.opacity(0.4))
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(14)
-        .background(Color(red: 0.2, green: 0.7, blue: 0.4).opacity(0.12), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(ZStack { palette.background; Color(red: 0.2, green: 0.7, blue: 0.4).opacity(0.14) }, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(ink.opacity(0.1)))
         .transition(.scale(scale: 0.92).combined(with: .opacity))
     }
 
@@ -611,9 +630,9 @@ struct ProjectRoomView: View {
     private var placeholder: String {
         switch step {
         case .askName: return "The name of your product"
-        case .askIdea: return "The idea: who it is for and what it does"
+        case .askIdea: return forFolder != nil ? "What should the team do in this folder?" : "The idea: who it is for and what it does"
         case .working: return "The team is working…"
-        case .done: return "Ask the team for changes"
+        case .done: return forFolder != nil ? "Ask the team for more" : "Ask the team for changes"
         }
     }
 
@@ -631,8 +650,17 @@ struct ProjectRoomView: View {
         guard messages.isEmpty else { return }
         if let project {
             // a saved project: its whole conversation, finished
-            projectID = project.id; name = project.name; idea = project.idea; summary = project.summary; saved = true; folder = project.folder
+            projectID = project.id; name = project.name; idea = project.idea; summary = project.summary; saved = true; folder = forFolder ?? project.folder
             messages = project.transcript; step = .done
+            return
+        }
+        if let forFolder {
+            // a folder's space: the folder is the project, so the first question is what to do in it
+            name = forFolder; folder = forFolder; step = .askIdea
+            let others = team.dropFirst().map(\.name)
+            let crew = others.isEmpty ? "" : " \(others.joined(separator: ", ")) and I are here too."
+            await say(lead, "Hi! I'm \(lead.name).\(crew) We're in your folder “\(forFolder)”. What should we do in it?")
+            focused = true
             return
         }
         let others = team.dropFirst().map(\.name)
@@ -669,6 +697,7 @@ struct ProjectRoomView: View {
     }
 
     private func run(change: String?) async {
+        if let forFolder { await runInFolder(forFolder, change: change); return }
         var task = "Product name: \(name)\nIdea: \(idea)\n\nWork as a team to turn this idea into a clear first plan: who it is for, the main features, a short tagline, and the first steps to build it. Split the work between the teammates by name, check each other's parts, and finish with a short summary for the person: when the work is done, close it yourself with done set to true and the summary filled in, and do not ask whether to continue. For small separate jobs (for example several taglines or a list of features to check) you can start copies of yourself, up to 10 at a time."
         if let change {
             archive += work
@@ -680,6 +709,31 @@ struct ProjectRoomView: View {
         // the project's folder exists from the start, so its files show up top left as they are made
         if folder == nil { folder = FolderStore.shared.makeFolder(name.isEmpty ? "Project" : name) }
         runner.runTeam(task: task, team: team, folder: nil, canEdit: false, store: agents)
+    }
+
+    /// Work on the folder's real files: read before changing, small exact edits, every change asks first and can be undone from Folders.
+    private func runInFolder(_ target: String, change: String?) async {
+        var task = "You are working in the person's folder \"\(target)\" (its files are listed for you). The person asks: \(change ?? idea)\n\nRead the files you need before you change them, make small exact edits, and split the work between the teammates by name. Finish with a short summary of what was done: close it yourself with done set to true and the summary filled in, and do not ask whether to continue. For small separate jobs you can start copies of yourself, up to 10 at a time."
+        if change != nil {
+            archive += work
+            if !summary.isEmpty { task += "\n\nWhat the team did earlier in this folder:\n\(summary)" }
+            let earlier = (messages + archive).filter { $0.kind == .user || $0.kind == .agent }.suffix(8).map { "\($0.from): \($0.text.prefix(200))" }.joined(separator: "\n")
+            if !earlier.isEmpty { task += "\n\nThe conversation so far:\n\(earlier)" }
+        }
+        step = .working
+        focused = false
+        summary = ""
+        folder = target
+        runner.runTeam(task: task, team: team, folder: target, canEdit: true, store: agents)
+    }
+
+    /// A folder's space keeps itself: the team, the conversation and the last result are saved after every run, and when it is closed.
+    private func autoSave() {
+        guard let target = forFolder else { return }
+        let all = Array((messages + archive + work).suffix(120))
+        projects.save(Project(id: projectID, name: target, idea: idea, teamIDs: team.map(\.id), summary: summary, transcript: all,
+                              workspaceID: workspace.id, folder: target, linkedFolder: target))
+        saved = true
     }
 
     /// The team's work goes into a folder of its own (in Folders): a README with the result, the whole conversation, and one file per copy.

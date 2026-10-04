@@ -88,7 +88,7 @@ struct GameHubView: View {
                 case .spacechatAI:
                     SpacechatAIView(authState: authState, player: player, save: save)
                 case .folders:
-                    FoldersView(folders: folderStore, agents: agentsStore)
+                    FoldersView(folders: folderStore, agents: agentsStore, authState: authState, onLogin: { showLogin = true })
                 case .messages:
                     MessagesView(authState: authState, inbox: inbox, agents: agentsStore, folders: folderStore)
                 case .settings:

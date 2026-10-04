@@ -13,6 +13,8 @@ struct Project: Codable, Identifiable, Equatable {
     var workspaceID: UUID?
     /// The folder (in Folders) holding this project's files.
     var folder: String?
+    /// Set when the project is a folder's own space: the team works on that folder's real files, and the conversation is kept with it.
+    var linkedFolder: String?
 }
 
 @MainActor

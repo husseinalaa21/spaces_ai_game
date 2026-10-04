@@ -17,6 +17,19 @@ struct SpacesAgent: Codable, Identifiable, Equatable {
     /// What this agent may do with files, code and the team's notes.
     var access = AgentAccess()
     var color: Color { Color(hue: hue, saturation: 0.62, brightness: 1.0) }
+    /// The Spacechat dot this agent is (Space Magic, ...): its picture is drawn from this key, exactly as in the Spacechat app.
+    var dotKey: String? { Self.spacechatDotKeys[id] }
+    /// What the picture is drawn from: the Spacechat dot's key, or the agent's own id.
+    var visualKey: String { dotKey ?? id }
+    static let spacechatDotKeys: [String: String] = [
+        "builtin-spaceai": "spaceai", "builtin-spacemagic": "spacemagic", "builtin-spacetrading": "spacetrading", "builtin-spaceideas": "spaceideas",
+        "builtin-spacedrive": "spacedrive", "builtin-spacemusic": "spacemusic", "builtin-spacephotos": "spacephotos", "builtin-spacevideos": "spacevideos",
+        "builtin-spaceshows": "spaceshows",
+    ]
+    /// The colour a Spacechat dot has in the Spacechat app (0...1), so it looks the same here.
+    static func spacechatHue(_ key: String) -> Double {
+        (SpacechatDotGeometry.brandHues[key] ?? Double((SpacechatDotGeometry.hash(key) >> 3) % 360)) / 360
+    }
 
     init(id: String, name: String, role: String, instructions: String, hue: Double, builtIn: Bool = false, access: AgentAccess = AgentAccess(), bio: String = "", shape: String? = nil) {
         self.id = id; self.name = name; self.role = role; self.instructions = instructions
@@ -54,6 +67,8 @@ struct AgentTweak: Codable, Equatable {
 enum AgentLookRegistry {
     static var shapes: [String: String] = [:]
     static var hues: [String: Double] = [:]
+    /// The Spacechat dot key an agent is drawn from (Space Magic, ...).
+    static var keys: [String: String] = [:]
 }
 
 struct AgentMessage: Codable, Identifiable, Equatable {
@@ -81,6 +96,36 @@ final class AgentsStore: ObservableObject {
                     instructions: "You review what teammates made, point out problems briefly and ask for fixes. You do not rewrite everything yourself.", hue: 0.84, builtIn: true, access: AgentAccess(read: true, write: false, run: true, notes: true))
     ]
 
+
+    /// Every dot of the Spacechat app (Spacechat AI and its eight focused versions), with the same names, jobs and colours.
+    static let spacechatDots: [SpacesAgent] = [
+        ("builtin-spaceai", "Spacechat AI", "Answers questions about anything", "You are Spacechat AI: you answer any question clearly and honestly, and help with everyday tasks."),
+        ("builtin-spacemagic", "Space Magic", "Tech tricks, shortcuts and how-tos", "You are Space Magic. You get answers fast and teach clever tech tricks, shortcuts and how-tos."),
+        ("builtin-spacetrading", "Space Trading", "Money skills: investing basics and risk", "You are Space Trading. You grow money skills: investing basics, risk management and steady habits. You never promise returns."),
+        ("builtin-spaceideas", "Space Ideas", "Turns ideas into projects and income", "You are Space Ideas. You grow ideas into real projects, products and income."),
+        ("builtin-spacedrive", "Space Drive", "Habits, discipline and momentum", "You are Space Drive. You build discipline, habits and momentum to reach goals."),
+        ("builtin-spacemusic", "Space Music", "Practice, songwriting and audience", "You are Space Music. You help people grow as musicians: practice, songwriting, theory and audience."),
+        ("builtin-spacephotos", "Space Photos", "Composition, light and editing", "You are Space Photos. You help people grow as photographers: composition, light, editing and sharing work."),
+        ("builtin-spacevideos", "Space Videos", "Hooks, scripts and editing", "You are Space Videos. You help people grow as video creators: hooks, scripts, editing and audience."),
+        ("builtin-spaceshows", "Space Shows", "Taste and storytelling from shows and films", "You are Space Shows. You grow taste and storytelling through great shows and films."),
+    ].map { row in
+        SpacesAgent(id: row.0, name: row.1, role: row.2, instructions: row.3, hue: SpacesAgent.spacechatHue(SpacesAgent.spacechatDotKeys[row.0] ?? row.0), builtIn: true,
+                    access: AgentAccess(read: true, write: true, run: false, notes: true))
+    }
+
+    /// The questions each Spacechat dot suggests (the same ones as in the Spacechat app).
+    static let spacechatSuggestions: [String: [String]] = [
+        "builtin-spaceai": ["Write a bio for my profile", "Help me plan a small project"],
+        "builtin-spacemagic": ["Teach me 5 iPhone tricks most people don’t know", "How do I make a slow laptop faster?"],
+        "builtin-spacetrading": ["Explain how investing works for a beginner", "Help me build a simple plan to grow my savings"],
+        "builtin-spaceideas": ["Help me turn my idea into a simple plan", "Give me 5 side-project ideas that can grow"],
+        "builtin-spacedrive": ["Help me build a daily routine I can stick to", "I feel unmotivated. How do I get moving?"],
+        "builtin-spacemusic": ["Make me a 4-week practice plan for guitar", "How do I write my first song?"],
+        "builtin-spacephotos": ["Teach me composition rules to level up my photos", "How do I get better light without a studio?"],
+        "builtin-spacevideos": ["Plan a short video that can grow my audience", "How do I write a strong hook in 3 seconds?"],
+        "builtin-spaceshows": ["Recommend shows that will teach me something new", "Break down what makes a great story"],
+    ]
+
     @Published private(set) var custom: [SpacesAgent] = []
     /// What the team has learned, shared by every agent (like SpaceAILM's shared notebook).
     @Published private(set) var notes: [String] = []
@@ -89,7 +134,7 @@ final class AgentsStore: ObservableObject {
     @Published private(set) var tweaks: [String: AgentTweak] = [:]
     @Published private(set) var chats: [String: [AgentMessage]] = [:]
     var all: [SpacesAgent] {
-        let list = Self.builtIns.map { builtIn -> SpacesAgent in
+        let list = (Self.builtIns + Self.spacechatDots).map { builtIn -> SpacesAgent in
             var a = builtIn
             if let changed = builtInAccess[a.id] { a.access = changed }
             if let tweak = tweaks[a.id] {
@@ -101,7 +146,11 @@ final class AgentsStore: ObservableObject {
             }
             return a
         } + custom
-        for agent in list { if let shape = agent.shape { AgentLookRegistry.shapes[agent.id] = shape } else { AgentLookRegistry.shapes.removeValue(forKey: agent.id) }; AgentLookRegistry.hues[agent.id] = agent.hue }
+        for agent in list {
+            if let shape = agent.shape { AgentLookRegistry.shapes[agent.id] = shape } else { AgentLookRegistry.shapes.removeValue(forKey: agent.id) }
+            AgentLookRegistry.hues[agent.id] = agent.hue
+            if let key = agent.dotKey { AgentLookRegistry.keys[agent.id] = key }
+        }
         return list
     }
 

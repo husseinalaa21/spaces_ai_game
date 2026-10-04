@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 struct FoldersView: View {
     @ObservedObject var folders: FolderStore
     @ObservedObject var agents: AgentsStore
+    @ObservedObject var authState: AuthState
+    let onLogin: () -> Void
 
     @State private var importing = false
     @State private var importKind: UTType = .folder
@@ -64,7 +66,7 @@ struct FoldersView: View {
         }
         .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("OK", role: .cancel) {} }
         .fullScreenCover(item: Binding(get: { opened.map { FolderRef(name: $0) } }, set: { opened = $0?.name })) { ref in
-            FolderDetailView(folder: ref.name, folders: folders, agents: agents) { opened = nil }
+            FolderDetailView(folder: ref.name, folders: folders, agents: agents, authState: authState, onLogin: onLogin) { opened = nil }
         }
     }
 
@@ -109,11 +111,16 @@ struct FolderDetailView: View {
     let folder: String
     @ObservedObject var folders: FolderStore
     @ObservedObject var agents: AgentsStore
+    @ObservedObject var authState: AuthState
+    let onLogin: () -> Void
+    @ObservedObject private var projects = ProjectStore.shared
+    @ObservedObject private var workspaces = WorkspaceStore.shared
+    private enum Cover: String, Identifiable { case team, space; var id: String { rawValue } }
+    @State private var cover: Cover?
     let onClose: () -> Void
 
     @State private var editing: WorkspaceFile?
     @State private var showChanges = false
-    @State private var showTeam = false
     @State private var importing = false
 
     var body: some View {
@@ -134,7 +141,7 @@ struct FolderDetailView: View {
                 }.buttonStyle(.plain).accessibilityLabel("Changes")
             }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 8)
 
-            Button { showTeam = true } label: {
+            Button { cover = .team } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "sparkles").font(.system(size: 15, weight: .bold))
                     Text("Ask agents to work on this folder").font(.system(size: 15, weight: .bold))
@@ -143,6 +150,21 @@ struct FolderDetailView: View {
                 }
                 .foregroundColor(DotRenderer.defaultColor).padding(.horizontal, 16).frame(height: 50)
                 .background(DotRenderer.defaultColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }.buttonStyle(.plain).padding(.horizontal, 14).padding(.bottom, 6)
+
+            Button { cover = .space } label: {
+                let past = projects.projects.first { $0.linkedFolder == folder }
+                HStack(spacing: 10) {
+                    Image(systemName: "circle.hexagongrid.fill").font(.system(size: 15, weight: .bold))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Continue in the space").font(.system(size: 15, weight: .bold))
+                        Text(past.map { "Its own dots and history · \($0.teamIDs.count) dot\($0.teamIDs.count == 1 ? "" : "s")" } ?? "Open this folder with its own dots and conversation").font(.system(size: 11.5, weight: .medium)).opacity(0.7)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold))
+                }
+                .foregroundColor(.white).padding(.horizontal, 16).frame(height: 54)
+                .background(Color.black, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }.buttonStyle(.plain).padding(.horizontal, 14).padding(.bottom, 6)
 
             if tree.isEmpty {
@@ -174,7 +196,14 @@ struct FolderDetailView: View {
         .preferredColorScheme(.light)
         .sheet(item: $editing) { file in FileEditorView(folder: folder, file: file, folders: folders) { editing = nil } }
         .sheet(isPresented: $showChanges) { ChangesView(folder: folder, folders: folders) { showChanges = false } }
-        .fullScreenCover(isPresented: $showTeam) { TeamRoomView(store: agents, folders: folders, preselected: folder) { showTeam = false } }
+        .fullScreenCover(item: $cover) { which in
+            switch which {
+            case .team: TeamRoomView(store: agents, folders: folders, preselected: folder) { cover = nil }
+            case .space:
+                TeamFlowView(agents: agents, folders: folders, projects: projects, authState: authState, workspace: workspaces.current, folderName: folder,
+                             onLogin: { cover = nil; onLogin() }, onClose: { cover = nil })
+            }
+        }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { _ = try? folders.importItems(urls, into: folder) }
         }

@@ -58,6 +58,6 @@ struct AgentAvatar: View {
     }
 
     var body: some View {
-        SpacechatDotFace(key: id, size: size, animated: animated ?? (size >= 40), hue: (AgentLookRegistry.hues[id] ?? hue) * 360, shape: shape)
+        SpacechatDotFace(key: AgentLookRegistry.keys[id] ?? id, size: size, animated: animated ?? (size >= 40), hue: (AgentLookRegistry.hues[id] ?? hue) * 360, shape: shape)
     }
 }

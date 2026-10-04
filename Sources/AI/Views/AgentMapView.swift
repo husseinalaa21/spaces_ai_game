@@ -65,6 +65,7 @@ struct AgentMapView: View {
     }
 
     private static func suggestions(for agent: SpacesAgent) -> [String] {
+        if let own = AgentsStore.spacechatSuggestions[agent.id] { return own }
         switch agent.id {
         case "builtin-dots": return ["Plan my week in three steps", "Help me decide what to build first"]
         case "builtin-coder": return ["Write a small script that renames files", "Explain how to fix a slow loop"]
@@ -78,7 +79,7 @@ struct AgentMapView: View {
         var out = Layout()
         let all = team
         let count = max(1, all.count)
-        let radius = max(Self.ringRadius, CGFloat(count) * 62)
+        let radius = max(Self.ringRadius, CGFloat(count) * 52)
         var minX: CGFloat = -200, maxX: CGFloat = 200, minY: CGFloat = -200, maxY: CGFloat = 200
         func grow(_ p: CGPoint, _ rx: CGFloat, _ ry: CGFloat) {
             minX = min(minX, p.x - rx); maxX = max(maxX, p.x + rx); minY = min(minY, p.y - ry); maxY = max(maxY, p.y + ry)

@@ -21,7 +21,7 @@ struct DotEditorView: View {
 
     private var isNew: Bool { agent == nil }
     private var isBuiltIn: Bool { agent?.builtIn == true }
-    private var dotID: String { agent?.id ?? newID }
+    private var dotID: String { agent?.visualKey ?? newID }
 
     private let presets: [(String, String, String)] = [
         ("Researcher", "Finds and explains things", "You look things up in the files you are given, explain them simply and say when you are unsure."),
