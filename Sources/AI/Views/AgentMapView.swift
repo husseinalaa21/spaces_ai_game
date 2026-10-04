@@ -762,6 +762,10 @@ private struct WorkspaceSheet: View {
     @State private var theme: UniverseTheme = .white
     @State private var chosen: Set<String> = []
     @FocusState private var focused: Bool
+    @ObservedObject private var shop = StoreManager.shared
+    @State private var buying: BuyTarget?
+
+    private func lookOpen(_ item: UniverseTheme) -> Bool { item == .white || shop.has(StoreGoods.universeID(item)) || item == space?.theme }
 
     var body: some View {
         NavigationStack {
@@ -771,10 +775,15 @@ private struct WorkspaceSheet: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 14) {
                             ForEach(UniverseTheme.allCases) { item in
-                                Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { theme = item } } label: {
+                                Button {
+                                    if lookOpen(item) { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { theme = item } }
+                                    else { buying = BuyTarget(id: StoreGoods.universeID(item), title: item.displayName + " universe", blurb: "A new look for your spaces.") }
+                                } label: {
                                     VStack(spacing: 6) {
-                                        tile(item).overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(theme == item ? Color.primary : .clear, lineWidth: 3).padding(-3))
-                                        Text(item.displayName).font(.system(size: 11, weight: .bold)).foregroundColor(.primary)
+                                        tile(item).opacity(lookOpen(item) ? 1 : 0.55)
+                                            .overlay { if !lookOpen(item) { Image(systemName: "lock.fill").font(.system(size: 15, weight: .bold)).foregroundColor(.primary) } }
+                                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(theme == item ? Color.primary : .clear, lineWidth: 3).padding(-3))
+                                        Text(lookOpen(item) ? item.displayName : (shop.price(for: StoreGoods.universeID(item)) ?? item.displayName)).font(.system(size: 11, weight: .bold)).foregroundColor(.primary)
                                     }
                                 }.buttonStyle(.plain)
                             }
@@ -797,6 +806,7 @@ private struct WorkspaceSheet: View {
             }
             .navigationTitle(space == nil ? "New workspace" : "Workspace")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $buying) { QuickBuySheet(target: $0) }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(space == nil ? "Create" : "Save") {

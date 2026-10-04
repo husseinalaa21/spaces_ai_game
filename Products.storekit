@@ -3,49 +3,349 @@
   "nonRenewingSubscriptions": [],
   "products": [
     {
-      "displayPrice": "0.99",
-      "familyShareable": false,
-      "internalID": "7000000001",
-      "localizations": [
-        {
-          "description": "500 Points.",
-          "displayName": "Starter Pack",
-          "locale": "en_US"
-        }
-      ],
-      "productID": "0.99",
-      "referenceName": "Starter Pack",
-      "type": "Consumable"
-    },
-    {
       "displayPrice": "2.99",
       "familyShareable": false,
-      "internalID": "7000000002",
+      "internalID": "7100000001",
       "localizations": [
         {
-          "description": "3,000 Points \u2014 2x value.",
-          "displayName": "Value Pack",
+          "description": "Change any dot's colour, bio and instructions, and make your own dots.",
+          "displayName": "Customize Dots",
           "locale": "en_US"
         }
       ],
-      "productID": "value",
-      "referenceName": "Value Pack",
-      "type": "Consumable"
+      "productID": "dots_customize",
+      "referenceName": "Customize Dots",
+      "type": "NonConsumable"
     },
     {
-      "displayPrice": "7.99",
+      "displayPrice": "0.99",
       "familyShareable": false,
-      "internalID": "7000000003",
+      "internalID": "7100000002",
       "localizations": [
         {
-          "description": "12,000 Points \u2014 3x value.",
-          "displayName": "Mega Pack",
+          "description": "The star dot design.",
+          "displayName": "Star dot",
           "locale": "en_US"
         }
       ],
-      "productID": "mega",
-      "referenceName": "Mega Pack",
-      "type": "Consumable"
+      "productID": "dot_star",
+      "referenceName": "Star dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000003",
+      "localizations": [
+        {
+          "description": "The drop dot design.",
+          "displayName": "Drop dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_drop",
+      "referenceName": "Drop dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000004",
+      "localizations": [
+        {
+          "description": "The heart dot design.",
+          "displayName": "Heart dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_heart",
+      "referenceName": "Heart dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000005",
+      "localizations": [
+        {
+          "description": "The cloud dot design.",
+          "displayName": "Cloud dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_cloud",
+      "referenceName": "Cloud dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000006",
+      "localizations": [
+        {
+          "description": "The triangle dot design.",
+          "displayName": "Triangle dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_triangle",
+      "referenceName": "Triangle dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000007",
+      "localizations": [
+        {
+          "description": "The octagon dot design.",
+          "displayName": "Octagon dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_octagon",
+      "referenceName": "Octagon dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000008",
+      "localizations": [
+        {
+          "description": "The star6 dot design.",
+          "displayName": "Star6 dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_star6",
+      "referenceName": "Star6 dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000009",
+      "localizations": [
+        {
+          "description": "The blob dot design.",
+          "displayName": "Blob dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_blob",
+      "referenceName": "Blob dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000010",
+      "localizations": [
+        {
+          "description": "The diamond dot design.",
+          "displayName": "Diamond dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_diamond",
+      "referenceName": "Diamond dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000011",
+      "localizations": [
+        {
+          "description": "The gear dot design.",
+          "displayName": "Gear dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_gear",
+      "referenceName": "Gear dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000012",
+      "localizations": [
+        {
+          "description": "The pentagon dot design.",
+          "displayName": "Pentagon dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_pentagon",
+      "referenceName": "Pentagon dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000013",
+      "localizations": [
+        {
+          "description": "The plus dot design.",
+          "displayName": "Plus dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_plus",
+      "referenceName": "Plus dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000014",
+      "localizations": [
+        {
+          "description": "The burst dot design.",
+          "displayName": "Burst dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_burst",
+      "referenceName": "Burst dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "7100000015",
+      "localizations": [
+        {
+          "description": "The star4 dot design.",
+          "displayName": "Star4 dot",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dot_star4",
+      "referenceName": "Star4 dot",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "7100000016",
+      "localizations": [
+        {
+          "description": "The Sunset look for your spaces.",
+          "displayName": "Sunset universe",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "universe_sunset",
+      "referenceName": "Sunset universe",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "7100000017",
+      "localizations": [
+        {
+          "description": "The Midnight look for your spaces.",
+          "displayName": "Midnight universe",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "universe_midnight",
+      "referenceName": "Midnight universe",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "7100000018",
+      "localizations": [
+        {
+          "description": "The Ocean look for your spaces.",
+          "displayName": "Ocean universe",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "universe_ocean",
+      "referenceName": "Ocean universe",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "7100000019",
+      "localizations": [
+        {
+          "description": "The Forest look for your spaces.",
+          "displayName": "Forest universe",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "universe_forest",
+      "referenceName": "Forest universe",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "7100000020",
+      "localizations": [
+        {
+          "description": "The Bubblegum look for your spaces.",
+          "displayName": "Bubblegum universe",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "universe_bubblegum",
+      "referenceName": "Bubblegum universe",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "7100000021",
+      "localizations": [
+        {
+          "description": "The Volcano look for your spaces.",
+          "displayName": "Volcano universe",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "universe_volcano",
+      "referenceName": "Volcano universe",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "7100000022",
+      "localizations": [
+        {
+          "description": "The Aurora look for your spaces.",
+          "displayName": "Aurora universe",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "universe_aurora",
+      "referenceName": "Aurora universe",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "7100000023",
+      "localizations": [
+        {
+          "description": "The Cosmic look for your spaces.",
+          "displayName": "Cosmic universe",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "universe_cosmic",
+      "referenceName": "Cosmic universe",
+      "type": "NonConsumable"
     }
   ],
   "settings": {

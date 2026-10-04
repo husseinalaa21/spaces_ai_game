@@ -18,7 +18,7 @@ struct GameHubView: View {
     /// Owned here so the menu's paywall and Settings' subscription rows are
     /// the same StoreManager — two instances would mean two product loads and
     /// two transaction listeners racing each other.
-    @StateObject private var store = StoreManager()
+    @ObservedObject private var store = StoreManager.shared
     @StateObject private var inbox = SpacesInbox()
     @StateObject private var agentsStore = AgentsStore()
     @ObservedObject private var folderStore = FolderStore.shared
@@ -122,20 +122,8 @@ struct GameHubView: View {
                 .preferredColorScheme(.light)
         }
         .fullScreenCover(isPresented: $showStore) {
-            ZStack(alignment: .topTrailing) {
-                MainMenuView(player: player, authState: authState, sync: sync,
-                             store: store, save: save,
-                             onLogin: { showStore = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showLogin = true } },
-                             onPlay: { showStore = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showTeam = true } })
-                Button { showStore = false } label: {
-                    Image(systemName: "xmark").font(.system(size: 16, weight: .bold)).foregroundColor(.black)
-                        .frame(width: 40, height: 40).background(Color.black.opacity(0.07), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, 16).padding(.top, GameHubView.bannerTopInset)
-                .accessibilityLabel("Close")
-            }
-            .preferredColorScheme(.light)
+            StoreView(player: player, store: store, authState: authState, save: save)
+                .preferredColorScheme(.light)
         }
         .fullScreenCover(isPresented: $showTeam) {
             TeamFlowView(agents: agentsStore, folders: folderStore, projects: projectStore, authState: authState,
@@ -151,6 +139,7 @@ struct GameHubView: View {
         }
         .onChange(of: scenePhase) { _ in inbox.persist() }
         .onChange(of: inbox.incomingAlertID) { _ in HapticsManager.shared.impact(.light) }
+        .onAppear { store.requiresSignIn = { authState.isGuest } }
         .task(id: authState.spacechatUsername) {
             inbox.configure(username: authState.spacechatUsername)
             if authState.spacechatUsername != nil { await inbox.refresh() }

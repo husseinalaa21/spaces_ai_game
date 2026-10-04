@@ -270,13 +270,6 @@ struct MainMenuView: View {
         // appears — a subscription can be cancelled, lapse, be refunded or be
         // bought on another device entirely outside this app.
         .task {
-            // Set before any product load so a transaction redelivered at
-            // launch (a crash mid-purchase, a late Ask to Buy approval) is
-            // credited rather than finished silently.
-            store.grantPoints = { points in
-                player.profile.points += points
-                save()
-            }
             await store.loadProduct()
             await store.refreshEntitlement()
             player.refreshPremium(subscribed: store.isSubscribed)
@@ -1347,7 +1340,7 @@ private struct SignInRequiredSheet: View {
 /// `StoreManager`) or redeeming Points actually earned from play. Point
 /// Packs remain local stand-ins until their consumable products exist in
 /// App Store Connect.
-private struct StoreView: View {
+struct StoreView: View {
     @ObservedObject var player: PlayerState
     @ObservedObject var store: StoreManager
     @ObservedObject var authState: AuthState
@@ -1355,35 +1348,18 @@ private struct StoreView: View {
     @State private var showSignInGate = false
     @Environment(\.dismiss) private var dismiss
 
-    private let gold = DotStyle.gold.swatchColor
-
-    /// Starter sets the base rate (~505 Points per dollar); Value and Mega
-    /// pay that rate doubled and tripled (§ new — "add extra points to value
-    /// and extra points to the mega... like 3x"). Before this, Value was
-    /// actually *worse* value per dollar than Starter, so the middle tier had
-    /// no reason to exist.
-    /// `productID` must match App Store Connect exactly — including the
-    /// Starter Pack's, which really is the string "0.99". `fallbackPrice` is
-    /// only shown for the instant before StoreKit returns the real localized
-    /// price; the live one always wins.
-    private let pointPacks: [(name: String, productID: String, points: Int, multiplier: Int, fallbackPrice: String, icon: String, color: Color, highlight: Bool)] = [
-        ("Starter Pack", "0.99", 500, 1, "$0.99", "shippingbox.fill", IconPalette.blue, false),
-        ("Value Pack", "value", 3000, 2, "$2.99", "gift.fill", IconPalette.pink, false),
-        ("Mega Pack", "mega", 12000, 3, "$7.99", "crown.fill", IconPalette.gold, true)
-    ]
+    private let columns = [GridItem(.adaptive(minimum: 92), spacing: 12)]
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    balanceCard
+                    customizeSection
+                    dotDesignsSection
+                    universesSection
                     membershipSection
-                    if MainMenuView.showsUniverses { universesSection }
-                    dotStylesSection
-                    pointPacksSection
-                    earnPointsSection
 
-                    Text("Premium and Point Packs are real App Store purchases. Points are consumable and are not restored on a new device.")
+                    Text("Purchases are made with your Apple Account and come back with Restore Purchases on any device signed in to it.")
                         .font(.system(size: 12))
                         .foregroundColor(.black.opacity(0.4))
                         .padding(.top, 4)
@@ -1392,10 +1368,6 @@ private struct StoreView: View {
             }
             .background(Color(white: 0.96).ignoresSafeArea())
             .task {
-                store.grantPoints = { points in
-                    player.profile.points += points
-                    save()
-                }
                 await store.loadProduct()
                 await store.refreshEntitlement()
                 player.refreshPremium(subscribed: store.isSubscribed)
@@ -1411,33 +1383,90 @@ private struct StoreView: View {
         }
     }
 
-    private var balanceCard: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Your Points")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.black.opacity(0.55))
-                HStack(spacing: 6) {
-                    Image("Sparkle").renderingMode(.template).resizable()
-                        .frame(width: 18, height: 18).foregroundColor(gold)
-                    Text(formattedPoints)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .contentTransition(.numericText())
+    // MARK: - Sections
+
+    private var customizeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("CUSTOMIZE")
+            HStack(spacing: 14) {
+                SpacechatDotFace(key: "customize", size: 56, animated: true, hue: 0.84 * 360, shape: "flower")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Customize Dots").font(.system(size: 16, weight: .bold, design: .rounded))
+                    Text("Change any dot's colour, bio and instructions, and make your own dots.")
+                        .font(.system(size: 12.5)).foregroundColor(.black.opacity(0.6))
+                }
+                Spacer(minLength: 6)
+                buyButton(StoreGoods.customizeID)
+            }
+            .padding(16)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+        }
+    }
+
+    private var dotDesignsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("DOT DESIGNS")
+            LazyVGrid(columns: columns, spacing: 16) {
+                ForEach(StoreGoods.paidShapes, id: \.self) { shape in
+                    tile(name: StoreGoods.shapeName(shape), id: StoreGoods.dotID(shape)) {
+                        SpacechatDotFace(key: shape, size: 54, animated: false, hue: 0.60 * 360, shape: shape).frame(height: 58)
+                    }
                 }
             }
-            Spacer()
-            if player.profile.isPremium {
-                Label("Premium Active", systemImage: "checkmark.seal.fill")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color.black, in: Capsule())
-            }
+            .padding(16)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
         }
-        .padding(18)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18))
-        .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
-        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: player.profile.points)
+    }
+
+    /// Every universe look, bought one at a time.
+    private var universesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("UNIVERSES")
+            LazyVGrid(columns: columns, spacing: 16) {
+                ForEach(StoreGoods.paidUniverses) { theme in
+                    tile(name: theme.displayName, id: StoreGoods.universeID(theme)) { UniverseTile(theme: theme) }
+                }
+            }
+            .padding(16)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+        }
+    }
+
+    private func sectionTitle(_ text: String) -> some View {
+        Text(text).font(.system(size: 12, weight: .semibold)).foregroundColor(.black.opacity(0.45))
+    }
+
+    /// A preview, its name and either "Owned" or a price button that opens Apple's purchase sheet.
+    private func tile<Preview: View>(name: String, id: String, @ViewBuilder preview: () -> Preview) -> some View {
+        VStack(spacing: 7) {
+            preview()
+            Text(name).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundColor(.black.opacity(0.75)).lineLimit(1)
+            buyButton(id, compact: true)
+        }
+    }
+
+    @ViewBuilder
+    private func buyButton(_ id: String, compact: Bool = false) -> some View {
+        if store.has(id) {
+            Label("Owned", systemImage: "checkmark.circle.fill")
+                .font(.system(size: compact ? 11 : 13, weight: .semibold)).foregroundColor(.green)
+        } else {
+            Button { buy(id) } label: {
+                Group {
+                    if store.purchaseInFlight { ProgressView().tint(.white) }
+                    else { Text(store.price(for: id) ?? "Buy") }
+                }
+                .font(.system(size: compact ? 12 : 14, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .padding(.horizontal, compact ? 14 : 16).padding(.vertical, compact ? 6 : 8)
+                .background(store.goods[id] == nil ? Color.black.opacity(0.3) : Color.black, in: Capsule())
+            }
+            .buttonStyle(PressableButtonStyle(scale: 0.95))
+            .disabled(store.goods[id] == nil || store.purchaseInFlight)
+        }
     }
 
     private var membershipSection: some View {
@@ -1510,205 +1539,6 @@ private struct StoreView: View {
         }
     }
 
-    /// Every Universe, buyable one at a time with Points — a full shop
-    /// listing to browse and buy from directly, alongside the home menu's
-    /// own tap-a-locked-tile flow (§ new — "add more universes to buy").
-    private var universesSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("UNIVERSES")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.black.opacity(0.45))
-
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 12)], spacing: 16) {
-                ForEach(UniverseTheme.allCases) { theme in
-                    cosmeticCell(
-                        name: theme.displayName,
-                        price: theme.price,
-                        owned: player.profile.owns(theme),
-                        equipped: player.profile.selectedUniverse == theme,
-                        preview: { UniverseSwatch(theme: theme, isSelected: true, locked: false) },
-                        onEquip: { player.profile.selectedUniverse = theme; save() },
-                        onBuy: { if player.purchase(theme) { save(); HapticsManager.shared.success() } }
-                    )
-                }
-            }
-            .padding(16)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
-            .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
-        }
-    }
-
-    /// Every Dot Style, same idea as `universesSection` above (§ new — "add
-    /// more dots... set price for them").
-    private var dotStylesSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("DOT STYLES")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.black.opacity(0.45))
-
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 12)], spacing: 16) {
-                ForEach(DotStyle.allCases) { style in
-                    cosmeticCell(
-                        name: style.displayName,
-                        price: style.price,
-                        owned: player.profile.owns(style),
-                        equipped: player.profile.selectedDotStyle == style,
-                        preview: { DotStylePreviewCanvas(style: style, diameter: 46).frame(height: 52) },
-                        onEquip: { player.profile.selectedDotStyle = style; save() },
-                        onBuy: { if player.purchase(style) { save(); HapticsManager.shared.success() } }
-                    )
-                }
-            }
-            .padding(.vertical, 4)
-        }
-    }
-
-    /// One shop tile shared by both grids above — a small preview, its name,
-    /// and either an "Equip"/"Equipped" state (already owned) or a
-    /// "Buy N pts" button (still locked), so the same layout and behavior
-    /// serves Universes and Dot Styles alike.
-    @ViewBuilder
-    private func cosmeticCell<Preview: View>(
-        name: String, price: Int, owned: Bool, equipped: Bool,
-        @ViewBuilder preview: () -> Preview, onEquip: @escaping () -> Void, onBuy: @escaping () -> Void
-    ) -> some View {
-        VStack(spacing: 6) {
-            preview()
-            Text(name)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundColor(.black.opacity(0.75))
-                .lineLimit(1)
-
-            if owned {
-                if equipped {
-                    Text("Equipped")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.green)
-                } else {
-                    Button("Equip", action: onEquip)
-                        .font(.system(size: 11, weight: .semibold))
-                        .buttonStyle(PressableButtonStyle(scale: 0.94))
-                }
-            } else {
-                let canAfford = player.profile.points >= price
-                Button(action: onBuy) {
-                    HStack(spacing: 3) {
-                        Image("Sparkle").renderingMode(.template).resizable()
-                            .frame(width: 9, height: 9)
-                        Text("\(price)")
-                    }
-                    .font(.system(size: 11, weight: .semibold))
-                }
-                .foregroundColor(canAfford ? .black : .black.opacity(0.3))
-                .buttonStyle(PressableButtonStyle(scale: 0.94))
-                .disabled(!canAfford)
-            }
-        }
-    }
-
-    private var pointPacksSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("POINT PACKS")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.black.opacity(0.45))
-
-            VStack(spacing: 12) {
-                ForEach(pointPacks, id: \.name) { pack in
-                    Button(action: { buyPointPack(pack) }) {
-                        HStack(spacing: 14) {
-                            Image(systemName: pack.icon)
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(pack.color)
-                                .frame(width: 40, height: 40)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(pack.name)
-                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.black)
-                                HStack(spacing: 4) {
-                                    Image("Sparkle").renderingMode(.template).resizable()
-                                        .frame(width: 11, height: 11).foregroundColor(gold)
-                                    Text("+\(pack.points)")
-                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                        .foregroundColor(.black.opacity(0.7))
-                                    if pack.multiplier > 1 {
-                                        Text("· \(pack.multiplier)× value")
-                                            .font(.system(size: 11))
-                                            .foregroundColor(pack.color)
-                                    }
-                                }
-                            }
-                            Spacer()
-                            Text(store.price(for: pack.productID) ?? pack.fallbackPrice)
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 14).padding(.vertical, 8)
-                                .background(Color.black, in: Capsule())
-                        }
-                        .padding(14)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
-                        .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
-                        .overlay(alignment: .topTrailing) {
-                            if pack.multiplier > 1 {
-                                Text(pack.highlight ? "BEST VALUE · \(pack.multiplier)× POINTS"
-                                                    : "\(pack.multiplier)× POINTS")
-                                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 8).padding(.vertical, 4)
-                                    .background(pack.highlight ? gold : pack.color, in: Capsule())
-                                    .offset(x: -10, y: -8)
-                            }
-                        }
-                    }
-                    .buttonStyle(PressableButtonStyle(scale: 0.97))
-                }
-            }
-
-            Text("Points are added to your profile as soon as the purchase completes.")
-                .font(.system(size: 11))
-                .foregroundColor(.black.opacity(0.4))
-        }
-    }
-
-    private var earnPointsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("EARN POINTS BY PLAYING")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.black.opacity(0.45))
-            VStack(alignment: .leading, spacing: 12) {
-                earnRow(icon: "sparkles", color: IconPalette.purple, text: "Eat collectibles — more Points for rarer finds")
-                earnRow(icon: "checkmark.seal.fill", color: IconPalette.green, text: "Complete a form — +30 Points")
-                earnRow(icon: "arrow.up.circle.fill", color: IconPalette.blue, text: "Level up — +15 Points")
-                earnRow(icon: "clock.badge.checkmark.fill", color: IconPalette.orange,
-                        text: player.pointsRemainingToday > 0
-                            ? "\(player.pointsRemainingToday) of \(PlayerState.dailyEarnCap) Points left to earn today"
-                            : "Daily earning limit reached — resets tomorrow")
-            }
-            .padding(16)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
-            .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
-        }
-    }
-
-    private func earnRow(icon: String, color: Color, text: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(color)
-                .frame(width: 26, height: 26)
-            Text(text).font(.system(size: 13)).foregroundColor(.black.opacity(0.7))
-        }
-    }
-
-    private var formattedPoints: String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        return formatter.string(from: NSNumber(value: player.profile.points)) ?? "\(player.profile.points)"
-    }
-
-    // MARK: - Actions
-
     /// Real App Store purchase of `spaces_vip`. Nothing is granted locally —
     /// entitlement comes back from Apple and is folded in by
     /// `PlayerState.refreshPremium(subscribed:)`.
@@ -1731,16 +1561,30 @@ private struct StoreView: View {
         }
     }
 
-    /// Real App Store purchase of a consumable. Points are credited by
-    /// `StoreManager`'s redeem path (wired to `grantPoints` in `.task`), not
-    /// here, so a transaction redelivered after a crash still pays out.
-    private func buyPointPack(_ pack: (name: String, productID: String, points: Int, multiplier: Int, fallbackPrice: String, icon: String, color: Color, highlight: Bool)) {
+    private func buy(_ id: String) {
         guard !authState.isGuest else { showSignInGate = true; return }
         Task {
-            if await store.purchasePointPack(id: pack.productID) {
-                HapticsManager.shared.impact(.light)
-            }
+            if await store.purchase(goods: id) { HapticsManager.shared.success() }
         }
+    }
+}
+
+/// A little window onto a universe look: its background and grid.
+struct UniverseTile: View {
+    let theme: UniverseTheme
+    var size: CGFloat = 64
+
+    var body: some View {
+        let palette = WorldBackground.palette(for: theme)
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(palette.background)
+            Canvas { ctx, canvas in
+                var x: CGFloat = 8
+                while x < canvas.width { var y: CGFloat = 8; while y < canvas.height { ctx.fill(Path(ellipseIn: CGRect(x: x - 1, y: y - 1, width: 2, height: 2)), with: .color(palette.line)); y += 14 }; x += 14 }
+            }
+            Circle().fill(theme.swatchColor).frame(width: size * 0.34, height: size * 0.34).overlay(Circle().stroke(Color.black.opacity(0.15)))
+        }
+        .frame(width: size, height: size)
     }
 }
 

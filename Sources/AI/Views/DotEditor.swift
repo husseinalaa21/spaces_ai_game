@@ -18,6 +18,11 @@ struct DotEditorView: View {
     @State private var newID = "agent-" + UUID().uuidString
     @State private var access = AgentAccess()
     @State private var confirmDelete = false
+    @ObservedObject private var shop = StoreManager.shared
+    @State private var buying: BuyTarget?
+
+    /// Colour, bio, instructions and new dots come with Customize.
+    private var locked: Bool { !shop.has(StoreGoods.customizeID) }
 
     private var isNew: Bool { agent == nil }
     private var isBuiltIn: Bool { agent?.builtIn == true }
@@ -46,11 +51,27 @@ struct DotEditorView: View {
                     .padding(.vertical, 8).listRowBackground(Color.clear)
                 }
 
+                if locked {
+                    Section {
+                        Button { buying = BuyTarget(id: StoreGoods.customizeID, title: "Customize Dots", blurb: "Change any dot's colour, bio and instructions, and make your own dots.") } label: {
+                            HStack {
+                                Image(systemName: "lock.fill")
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Unlock Customize").font(.subheadline.weight(.bold))
+                                    Text("Colour, bio and instructions are part of Customize.").font(.caption).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Text(shop.price(for: StoreGoods.customizeID) ?? "Buy").font(.subheadline.weight(.bold))
+                            }
+                        }
+                    }
+                }
+
                 Section("Shape") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             shapeTile(nil, label: "Auto")
-                            ForEach(SpacechatDotGeometry.shapeNames, id: \.self) { shapeTile($0, label: $0.capitalized) }
+                            ForEach(SpacechatDotGeometry.shapeNames, id: \.self) { shapeTile($0, label: StoreGoods.shapeName($0)) }
                         }.padding(.vertical, 8).padding(.horizontal, 10)
                     }
                 }
@@ -68,19 +89,22 @@ struct DotEditorView: View {
                     }
                     Slider(value: $hue, in: 0...1).tint(Color(hue: hue, saturation: 0.7, brightness: 0.95))
                 }
+                .disabled(locked).opacity(locked ? 0.45 : 1)
 
                 if !isBuiltIn {
-                    Section("Name") { TextField("Name, like Ava", text: $name).textInputAutocapitalization(.words) }
-                    Section("What it does") { TextField("A short job, like \"checks my spelling\"", text: $role) }
+                    Section("Name") { TextField("Name, like Ava", text: $name).textInputAutocapitalization(.words) }.disabled(locked).opacity(locked ? 0.45 : 1)
+                    Section("What it does") { TextField("A short job, like \"checks my spelling\"", text: $role) }.disabled(locked).opacity(locked ? 0.45 : 1)
                 }
 
                 Section {
                     TextField("Who is this dot? Its personality, background, how it talks…", text: $bio, axis: .vertical).lineLimit(3...8)
                 } header: { Text("Bio") } footer: { Text("Shown under the dot, and told to the dot so it stays in character.") }
+                .disabled(locked).opacity(locked ? 0.45 : 1)
 
                 Section {
                     TextField(isBuiltIn ? "Extra instructions (optional)" : "How it should work (optional)", text: $instructions, axis: .vertical).lineLimit(2...8)
                 } header: { Text(isBuiltIn ? "Extra instructions" : "Instructions") }
+                .disabled(locked).opacity(locked ? 0.45 : 1)
 
                 if isNew {
                     Section("Start from") {
@@ -108,7 +132,7 @@ struct DotEditorView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onDone) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isNew ? "Create" : "Save", action: save).fontWeight(.bold)
-                        .disabled(!isBuiltIn && name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled((!isBuiltIn && name.trimmingCharacters(in: .whitespaces).isEmpty) || (isNew && locked))
                 }
             }
             .confirmationDialog("Delete this dot?", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -116,6 +140,7 @@ struct DotEditorView: View {
                 Button("Cancel", role: .cancel) {}
             }
             .onAppear(perform: load)
+            .sheet(item: $buying) { QuickBuySheet(target: $0) }
         }
         .tint(.primary)
     }
@@ -131,12 +156,24 @@ struct DotEditorView: View {
         }
     }
 
+    /// A shape is free, bought, or the one this dot already has.
+    private func shapeOpen(_ value: String?) -> Bool {
+        guard let value else { return true }
+        return StoreGoods.freeShapes.contains(value) || shop.has(StoreGoods.dotID(value)) || value == agent?.shape
+    }
+
     private func shapeTile(_ value: String?, label: String) -> some View {
-        Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { shape = value } } label: {
+        let open = shapeOpen(value)
+        return Button {
+            if open { withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { shape = value } }
+            else if let value { buying = BuyTarget(id: StoreGoods.dotID(value), title: label + " dot", blurb: "A new design for your dots.") }
+        } label: {
             VStack(spacing: 4) {
                 SpacechatDotFace(key: dotID, size: 52, animated: false, hue: hue * 360, shape: value ?? defaultShape)
+                    .opacity(open ? 1 : 0.5)
                     .overlay(Circle().stroke(shape == value ? Color.primary : .clear, lineWidth: 3).padding(-5))
-                Text(label).font(.system(size: 10.5, weight: .semibold)).foregroundColor(.secondary)
+                    .overlay { if !open { Image(systemName: "lock.fill").font(.system(size: 14, weight: .bold)).foregroundColor(.primary) } }
+                Text(open ? label : (value.flatMap { shop.price(for: StoreGoods.dotID($0)) } ?? label)).font(.system(size: 10.5, weight: .semibold)).foregroundColor(.secondary)
             }
         }.buttonStyle(.plain)
     }
@@ -166,5 +203,45 @@ struct DotEditorView: View {
                           bio: bio.trimmingCharacters(in: .whitespacesAndNewlines), shape: shape)
         }
         onDone()
+    }
+}
+
+
+/// Something the person tapped that is sold in the Store.
+struct BuyTarget: Identifiable {
+    let id: String
+    let title: String
+    let blurb: String
+}
+
+/// A small purchase sheet for one item, opened from a locked look in the editor or the workspace sheet.
+struct QuickBuySheet: View {
+    let target: BuyTarget
+    @ObservedObject private var shop = StoreManager.shared
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Text(target.title).font(.system(size: 20, weight: .heavy, design: .rounded))
+            Text(target.blurb).font(.system(size: 14)).foregroundColor(.secondary).multilineTextAlignment(.center)
+            if shop.requiresSignIn() {
+                Text("Sign in to buy this. Purchases belong to your account.").font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.center)
+            } else {
+                Button {
+                    Task { if await shop.purchase(goods: target.id) { HapticsManager.shared.success(); dismiss() } }
+                } label: {
+                    Group { if shop.purchaseInFlight { ProgressView().tint(.white) } else { Text("Buy \(shop.price(for: target.id) ?? "")") } }
+                        .font(.system(size: 16, weight: .bold, design: .rounded)).foregroundColor(.white)
+                        .frame(maxWidth: .infinity).padding(.vertical, 13)
+                        .background(shop.goods[target.id] == nil ? Color.black.opacity(0.3) : Color.black, in: Capsule())
+                }
+                .disabled(shop.goods[target.id] == nil || shop.purchaseInFlight)
+            }
+            if let message = shop.errorMessage { Text(message).font(.system(size: 12)).foregroundColor(.red.opacity(0.8)) }
+            Button("Not now") { dismiss() }.font(.system(size: 14, weight: .semibold)).foregroundColor(.secondary)
+        }
+        .padding(24)
+        .presentationDetents([.height(280)])
+        .task { await shop.loadProduct() }
     }
 }
