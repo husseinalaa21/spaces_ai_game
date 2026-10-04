@@ -17,6 +17,8 @@ struct Topic: Codable, Identifiable, Equatable {
     var title: String
     var nodes: [TopicNode]
     var createdAt = Date()
+    /// Which workspace's map it lives on (nil: the first one, for topics made before workspaces).
+    var workspaceID: UUID?
 
     var root: TopicNode? { nodes.first { $0.parentID == nil } }
     func children(of id: UUID) -> [TopicNode] { nodes.filter { $0.parentID == id } }
@@ -51,14 +53,18 @@ final class TopicStore: ObservableObject {
     }
 
     @discardableResult
-    func create(title: String, firstAgent: SpacesAgent) -> Topic {
+    func create(title: String, firstAgent: SpacesAgent, workspace: UUID) -> Topic {
         let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let topic = Topic(title: clean.isEmpty ? "New topic" : String(clean.prefix(120)), nodes: [TopicNode(agentID: firstAgent.id, parentID: nil)])
+        let topic = Topic(title: clean.isEmpty ? "New topic" : String(clean.prefix(120)), nodes: [TopicNode(agentID: firstAgent.id, parentID: nil)], workspaceID: workspace)
         topics.append(topic); persist()
         return topic
     }
 
     func topic(_ id: UUID) -> Topic? { topics.first { $0.id == id } }
+
+    func topics(in workspace: UUID) -> [Topic] { topics.filter { ($0.workspaceID ?? WorkspaceStore.defaultID) == workspace } }
+
+    func deleteAll(in workspace: UUID) { topics.removeAll { ($0.workspaceID ?? WorkspaceStore.defaultID) == workspace }; persist() }
 
     func delete(_ id: UUID) { topics.removeAll { $0.id == id }; persist() }
 

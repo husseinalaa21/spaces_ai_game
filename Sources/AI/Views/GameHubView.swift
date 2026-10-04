@@ -24,6 +24,7 @@ struct GameHubView: View {
     @StateObject private var agentsStore = AgentsStore()
     @ObservedObject private var folderStore = FolderStore.shared
     @ObservedObject private var topicStore = TopicStore.shared
+    @ObservedObject private var workspaceStore = WorkspaceStore.shared
     /// The old Home (store, rewards, cosmetics), reached from the Store dot on the map.
     @State private var showStore = false
     @Environment(\.scenePhase) private var scenePhase
@@ -76,7 +77,7 @@ struct GameHubView: View {
             Group {
                 switch tab {
                 case .home:
-                    AgentMapView(authState: authState, agents: agentsStore, folders: folderStore, topics: topicStore,
+                    AgentMapView(authState: authState, agents: agentsStore, folders: folderStore, topics: topicStore, workspaces: workspaceStore,
                                  onPlay: { GameHubView.openTab = .home; onPlay() },
                                  onStore: { showStore = true },
                                  onLogin: { showLogin = true })

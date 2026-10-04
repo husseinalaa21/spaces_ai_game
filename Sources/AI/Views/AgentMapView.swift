@@ -7,6 +7,7 @@ struct AgentMapView: View {
     @ObservedObject var agents: AgentsStore
     @ObservedObject var folders: FolderStore
     @ObservedObject var topics: TopicStore
+    @ObservedObject var workspaces: WorkspaceStore
     let onPlay: () -> Void
     let onStore: () -> Void
     let onLogin: () -> Void
@@ -21,7 +22,24 @@ struct AgentMapView: View {
     @State private var showNew = false
     @State private var openNode: NodeRef?
     @State private var renaming: Topic?
+    @State private var editingSpace: Workspace?
+    @State private var creatingSpace = false
     @State private var renameText = ""
+
+    private var workspace: Workspace { workspaces.current }
+    private var palette: WorldBackground.Palette { WorldBackground.palette(for: workspace.theme) }
+    private var dark: Bool { palette.isDark }
+    /// Labels, lines and icons: black on a light look, white on a dark one.
+    private var ink: Color { dark ? .white : .black }
+    private var surface: Color { dark ? Color.white.opacity(0.12) : .white }
+    /// The dots on this workspace's map.
+    private var team: [SpacesAgent] {
+        let all = agents.all
+        guard let ids = workspace.team else { return all }
+        let picked = all.filter { ids.contains($0.id) }
+        return picked.isEmpty ? all : picked
+    }
+    private var visibleTopics: [Topic] { topics.topics(in: workspace.id) }
 
     struct NodeRef: Identifiable { let topic: UUID; let node: UUID; var id: UUID { node } }
 
@@ -53,7 +71,7 @@ struct AgentMapView: View {
 
     private var layout: Layout {
         var out = Layout()
-        let all = agents.all
+        let all = team
         let count = max(1, all.count)
         let radius = max(Self.ringRadius, CGFloat(count) * 62)
         var minX: CGFloat = -200, maxX: CGFloat = 200, minY: CGFloat = -200, maxY: CGFloat = 200
@@ -74,21 +92,21 @@ struct AgentMapView: View {
         let top = radius + 380
         var widths: [CGFloat] = []
         var placed: [[TopicLayout.Placed]] = []
-        for topic in topics.topics {
+        for topic in visibleTopics {
             let tree = TopicLayout.place(topic)
             widths.append(max(Self.cardWidth, tree.width) + 90)
             placed.append(tree.nodes)
         }
         let total = widths.reduce(0, +)
         var cursor = -total / 2
-        for (i, topic) in topics.topics.enumerated() {
+        for (i, topic) in visibleTopics.enumerated() {
             let center = CGPoint(x: cursor + widths[i] / 2, y: top)
             out.topicCards.append((topic, center, placed[i]))
             grow(center, widths[i] / 2, 60)
             for n in placed[i] { grow(CGPoint(x: center.x + n.x, y: center.y + n.y), 80, 110) }
             cursor += widths[i]
         }
-        if topics.topics.isEmpty { grow(CGPoint(x: 0, y: top), 160, 120) }
+        if visibleTopics.isEmpty { grow(CGPoint(x: 0, y: top), 160, 120) }
         out.rect = CGRect(x: minX - 160, y: minY - 160, width: maxX - minX + 320, height: maxY - minY + 320)
         return out
     }
@@ -99,7 +117,7 @@ struct AgentMapView: View {
         GeometryReader { geo in
             let scene = layout
             ZStack {
-                Color.white
+                palette.background
                 grid(size: geo.size)
                 world(scene)
                     .frame(width: scene.rect.width, height: scene.rect.height)
@@ -117,12 +135,12 @@ struct AgentMapView: View {
             .overlay(alignment: .bottomTrailing) { zoomControls }
         }
         .ignoresSafeArea()
-        .background(Color.white)
-        .preferredColorScheme(.light)
+        .background(palette.background)
+        .preferredColorScheme(dark ? .dark : .light)
         .fullScreenCover(item: $chatting) { agent in AgentChatView(agent: agent, store: agents, folders: folders) { chatting = nil } }
         .sheet(isPresented: $showNew) {
-            NewTopicSheet(agents: agents) { title, agent, runNow in
-                let topic = topics.create(title: title, firstAgent: agent)
+            NewTopicSheet(agents: team) { title, agent, runNow in
+                let topic = topics.create(title: title, firstAgent: agent, workspace: workspace.id)
                 showNew = false
                 focusOnTopic(topic.id)
                 if runNow { runner.run(topic: topic.id, topics: topics, agents: agents) }
@@ -132,6 +150,22 @@ struct AgentMapView: View {
         .sheet(item: $openNode) { ref in
             NodeSheet(ref: ref, agents: agents, topics: topics, runner: runner) { openNode = nil }
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $creatingSpace) {
+            WorkspaceSheet(agents: agents.all, space: nil) { name, theme, team in
+                creatingSpace = false
+                withAnimation(.easeInOut(duration: 0.3)) { workspaces.add(name: name, theme: theme, team: team) }
+                recenter()
+            }
+            .presentationDetents([.large])
+        }
+        .sheet(item: $editingSpace) { space in
+            WorkspaceSheet(agents: agents.all, space: space) { name, theme, team in
+                var next = space; next.name = name; next.theme = theme; next.team = team
+                editingSpace = nil
+                withAnimation(.easeInOut(duration: 0.3)) { workspaces.update(next) }
+            }
+            .presentationDetents([.large])
         }
         .alert("Rename topic", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Topic", text: $renameText)
@@ -151,7 +185,7 @@ struct AgentMapView: View {
                 let center = wp(.zero)
                 for item in scene.dots {
                     var line = Path(); line.move(to: center); line.addLine(to: wp(item.point))
-                    ctx.stroke(line, with: .color(.black.opacity(0.07)), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [2, 7]))
+                    ctx.stroke(line, with: .color(ink.opacity(0.07)), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [2, 7]))
                 }
                 for card in scene.topicCards {
                     let cardBottom = CGPoint(x: card.center.x, y: card.center.y + 52)
@@ -167,7 +201,7 @@ struct AgentMapView: View {
                         curve.move(to: wp(from))
                         let mid = (from.y + to.y) / 2
                         curve.addCurve(to: wp(to), control1: wp(CGPoint(x: from.x, y: mid)), control2: wp(CGPoint(x: to.x, y: mid)))
-                        let tint: Color = node?.status == .done ? .black.opacity(0.55) : (active ? Color(red: 0.16, green: 0.47, blue: 1) : .black.opacity(0.22))
+                        let tint: Color = node?.status == .done ? ink.opacity(0.55) : (active ? Color(red: 0.16, green: 0.47, blue: 1) : ink.opacity(0.22))
                         ctx.stroke(curve, with: .color(tint), style: StrokeStyle(lineWidth: active ? 3.5 : 2.5, lineCap: .round))
                         var head = Path()
                         head.move(to: wp(to)); head.addLine(to: wp(CGPoint(x: to.x - 6, y: to.y - 10))); head.move(to: wp(to)); head.addLine(to: wp(CGPoint(x: to.x + 6, y: to.y - 10)))
@@ -196,9 +230,9 @@ struct AgentMapView: View {
                     }
                 }
             }
-            if topics.topics.isEmpty {
+            if visibleTopics.isEmpty {
                 Text("Your topics will grow here")
-                    .font(.system(size: 15, weight: .semibold)).foregroundColor(.black.opacity(0.3))
+                    .font(.system(size: 15, weight: .semibold)).foregroundColor(ink.opacity(0.3))
                     .position(wp(CGPoint(x: 0, y: (scene.dots.map { $0.point.y }.max() ?? 270) + 380)))
             }
         }
@@ -208,14 +242,27 @@ struct AgentMapView: View {
         Canvas { ctx, s in
             let step = 44 * max(0.5, min(1.6, scale))
             let cx = s.width / 2 + offset.width, cy = s.height / 2 + offset.height
+            let dot = palette.line.opacity(dark ? 0.55 : 0.8)
             var x = cx.truncatingRemainder(dividingBy: step) - step
             while x < s.width + step {
                 var y = cy.truncatingRemainder(dividingBy: step) - step
                 while y < s.height + step {
-                    ctx.fill(Path(ellipseIn: CGRect(x: x - 1.2, y: y - 1.2, width: 2.4, height: 2.4)), with: .color(.black.opacity(0.07)))
+                    ctx.fill(Path(ellipseIn: CGRect(x: x - 1.2, y: y - 1.2, width: 2.4, height: 2.4)), with: .color(dot))
                     y += step
                 }
                 x += step
+            }
+            // the starry looks (Aurora, Cosmic) also get a slow field of stars that drifts less than the map
+            if palette.isCosmic {
+                for i in 0..<70 {
+                    let seed = Double(i) * 12.9898
+                    let fx = abs(sin(seed) * 43758.5453).truncatingRemainder(dividingBy: 1)
+                    let fy = abs(sin(seed * 1.7) * 24634.6345).truncatingRemainder(dividingBy: 1)
+                    let px = (fx * s.width + offset.width * 0.25).truncatingRemainder(dividingBy: s.width)
+                    let py = (fy * s.height + offset.height * 0.25).truncatingRemainder(dividingBy: s.height)
+                    let r = 0.8 + abs(sin(seed * 3.1)) * 1.4
+                    ctx.fill(Path(ellipseIn: CGRect(x: (px + s.width).truncatingRemainder(dividingBy: s.width), y: (py + s.height).truncatingRemainder(dividingBy: s.height), width: r, height: r)), with: .color(.white.opacity(0.35 + abs(sin(seed * 5.1)) * 0.5)))
+                }
             }
         }
         .allowsHitTesting(false)
@@ -250,7 +297,7 @@ struct AgentMapView: View {
                 Image(systemName: symbol).font(.system(size: 28, weight: .bold)).foregroundColor(.white)
                     .frame(width: 84, height: 84)
                     .background(LinearGradient(colors: fill, startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
-                Text(label).font(.system(size: 13, weight: .bold)).foregroundColor(.black.opacity(0.7))
+                Text(label).font(.system(size: 13, weight: .bold)).foregroundColor(ink.opacity(0.7))
             }
         }
         .buttonStyle(PressableButtonStyle())
@@ -261,8 +308,8 @@ struct AgentMapView: View {
         Button { HapticsManager.shared.impact(.light); chatting = agent } label: {
             VStack(spacing: 6) {
                 AgentAvatar(agent: agent, size: Self.dotSize)
-                Text(agent.name).font(.system(size: 15, weight: .heavy)).foregroundColor(.black)
-                Text(agent.role).font(.system(size: 11, weight: .medium)).foregroundColor(.black.opacity(0.45))
+                Text(agent.name).font(.system(size: 15, weight: .heavy)).foregroundColor(ink)
+                Text(agent.role).font(.system(size: 11, weight: .medium)).foregroundColor(ink.opacity(0.45))
                     .lineLimit(2).multilineTextAlignment(.center).frame(width: 150)
             }
         }
@@ -273,19 +320,19 @@ struct AgentMapView: View {
     private func suggestionBubble(_ agent: SpacesAgent, _ text: String) -> some View {
         Button {
             HapticsManager.shared.impact(.light)
-            let topic = topics.create(title: text, firstAgent: agent)
+            let topic = topics.create(title: text, firstAgent: agent, workspace: workspace.id)
             focusOnTopic(topic.id)
             runner.run(topic: topic.id, topics: topics, agents: agents)
         } label: {
             HStack(spacing: 8) {
                 AgentAvatar(agent: agent, size: 24)
-                Text(text).font(.system(size: 12.5, weight: .semibold)).foregroundColor(.black).multilineTextAlignment(.leading).lineLimit(3)
+                Text(text).font(.system(size: 12.5, weight: .semibold)).foregroundColor(ink).multilineTextAlignment(.leading).lineLimit(3)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
             .frame(width: 190, alignment: .leading)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(agent.color.opacity(0.7), lineWidth: 1.5))
-            .shadow(color: .black.opacity(0.06), radius: 6, y: 3)
+            .shadow(color: ink.opacity(0.06), radius: 6, y: 3)
         }
         .buttonStyle(PressableButtonStyle())
         .accessibilityLabel("Start a topic: \(text), with \(agent.name)")
@@ -315,7 +362,7 @@ struct AgentMapView: View {
         }
         .padding(14)
         .frame(width: Self.cardWidth)
-        .background(Color.black, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(dark ? Color.white.opacity(0.16) : Color.black, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private func nodeView(_ topic: Topic, _ node: TopicNode) -> some View {
@@ -326,26 +373,26 @@ struct AgentMapView: View {
                 ZStack(alignment: .topTrailing) {
                     Group {
                         if let agent { AgentAvatar(agent: agent, size: Self.nodeSize) }
-                        else { Circle().fill(Color.black.opacity(0.1)).frame(width: Self.nodeSize, height: Self.nodeSize) }
+                        else { Circle().fill(ink.opacity(0.1)).frame(width: Self.nodeSize, height: Self.nodeSize) }
                     }
                     .overlay(Circle().stroke(active ? Color(red: 0.16, green: 0.47, blue: 1) : .clear, lineWidth: 4).padding(-4))
                     statusBadge(node.status).offset(x: 4, y: -4)
                 }
             }
             .buttonStyle(PressableButtonStyle())
-            Text(agent?.name ?? "Gone").font(.system(size: 12, weight: .bold)).foregroundColor(.black)
+            Text(agent?.name ?? "Gone").font(.system(size: 12, weight: .bold)).foregroundColor(ink)
             if !node.result.isEmpty {
-                Text(node.result).font(.system(size: 10.5)).foregroundColor(.black.opacity(0.5)).lineLimit(2)
+                Text(node.result).font(.system(size: 10.5)).foregroundColor(ink.opacity(0.5)).lineLimit(2)
                     .frame(width: 128).multilineTextAlignment(.center)
             }
             // hand this dot's work over to another dot
             Menu {
-                ForEach(agents.all, id: \.id) { other in
+                ForEach(team, id: \.id) { other in
                     Button { handOver(topic: topic.id, from: node, to: other) } label: { Text(other.name) }
                 }
             } label: {
                 Image(systemName: "plus").font(.system(size: 11, weight: .heavy)).foregroundColor(.white)
-                    .frame(width: 24, height: 24).background(Color.black, in: Circle())
+                    .frame(width: 24, height: 24).background(dark ? Color.white.opacity(0.25) : Color.black, in: Circle())
             }
             .accessibilityLabel("Hand over to another dot")
         }
@@ -357,7 +404,7 @@ struct AgentMapView: View {
         switch status {
         case .idle: EmptyView()
         case .running:
-            ProgressView().scaleEffect(0.7).frame(width: 24, height: 24).background(Color.white, in: Circle()).shadow(color: .black.opacity(0.15), radius: 3)
+            ProgressView().scaleEffect(0.7).frame(width: 24, height: 24).background(Color.white, in: Circle()).shadow(color: ink.opacity(0.15), radius: 3)
         case .done:
             Image(systemName: "checkmark").font(.system(size: 11, weight: .heavy)).foregroundColor(.white).frame(width: 22, height: 22).background(Color.green, in: Circle())
         case .failed:
@@ -370,21 +417,57 @@ struct AgentMapView: View {
     private var topBar: some View {
         VStack(spacing: 8) {
             Color.clear.frame(height: GameHubView.bannerTopInset + 50)
+            HStack { workspacePill; Spacer() }.padding(.horizontal, 16)
             if authState.spacechatUsername == nil {
                 Button { onLogin() } label: {
                     Label("Log in with Spacechat so the dots can work", systemImage: "person.crop.circle.badge.checkmark")
-                        .font(.system(size: 12.5, weight: .semibold)).foregroundColor(.black)
+                        .font(.system(size: 12.5, weight: .semibold)).foregroundColor(ink)
                         .padding(.horizontal, 14).frame(height: 34)
                         .background(.ultraThinMaterial, in: Capsule())
-                        .overlay(Capsule().stroke(Color.black.opacity(0.08)))
+                        .overlay(Capsule().stroke(ink.opacity(0.08)))
                 }.buttonStyle(.plain)
             } else {
                 Text("Drag to explore · pinch to zoom")
-                    .font(.system(size: 12, weight: .medium)).foregroundColor(.black.opacity(0.4))
+                    .font(.system(size: 12, weight: .medium)).foregroundColor(ink.opacity(0.4))
                     .opacity(touched ? 0 : 1).animation(.easeOut(duration: 0.4), value: touched)
             }
         }
-        .allowsHitTesting(authState.spacechatUsername == nil)
+    }
+
+    /// The current workspace, with a menu to switch, make a new one or change this one.
+    private var workspacePill: some View {
+        Menu {
+            ForEach(workspaces.all) { space in
+                Button {
+                    HapticsManager.shared.impact(.light)
+                    withAnimation(.easeInOut(duration: 0.3)) { workspaces.select(space.id) }
+                    recenter()
+                } label: {
+                    if space.id == workspace.id { Label(space.name, systemImage: "checkmark") } else { Text(space.name) }
+                }
+            }
+            Divider()
+            Button("New workspace…", systemImage: "plus") { creatingSpace = true }
+            Button("Edit this workspace…", systemImage: "slider.horizontal.3") { editingSpace = workspace }
+            if workspaces.all.count > 1 {
+                Button("Delete this workspace", systemImage: "trash", role: .destructive) {
+                    let id = workspace.id
+                    withAnimation { workspaces.delete(id) }
+                    topics.deleteAll(in: id)
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Circle().fill(workspace.theme.swatchColor).frame(width: 16, height: 16)
+                    .overlay(Circle().stroke(ink.opacity(0.25), lineWidth: 1))
+                Text(workspace.name).font(.system(size: 14, weight: .bold)).foregroundColor(ink).lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10, weight: .bold)).foregroundColor(ink.opacity(0.5))
+            }
+            .padding(.horizontal, 12).frame(height: 36)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(ink.opacity(0.1)))
+        }
+        .accessibilityLabel("Workspace: \(workspace.name)")
     }
 
     private func bottomBar(_ scene: Layout) -> some View {
@@ -392,8 +475,8 @@ struct AgentMapView: View {
             Label("New topic", systemImage: "plus")
                 .font(.system(size: 15, weight: .bold)).foregroundColor(.white)
                 .padding(.horizontal, 22).frame(height: 50)
-                .background(Color.black, in: Capsule())
-                .shadow(color: .black.opacity(0.18), radius: 10, y: 5)
+                .background(dark ? Color.white.opacity(0.2) : Color.black, in: Capsule())
+                .shadow(color: ink.opacity(0.18), radius: 10, y: 5)
         }
         .buttonStyle(PressableButtonStyle())
         .padding(.bottom, GameHubView.homeIndicatorInset + 18)
@@ -403,13 +486,13 @@ struct AgentMapView: View {
         VStack(spacing: 8) {
             ForEach(Array([("plus", 1.35), ("minus", 1 / 1.35)].enumerated()), id: \.offset) { _, step in
                 Button { HapticsManager.shared.impact(.light); withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { zoom(to: scale * CGFloat(step.1)) } } label: {
-                    Image(systemName: step.0).font(.system(size: 15, weight: .bold)).foregroundColor(.black).frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle()).overlay(Circle().stroke(Color.black.opacity(0.08)))
+                    Image(systemName: step.0).font(.system(size: 15, weight: .bold)).foregroundColor(ink).frame(width: 40, height: 40)
+                        .background(.ultraThinMaterial, in: Circle()).overlay(Circle().stroke(ink.opacity(0.08)))
                 }.buttonStyle(.plain).accessibilityLabel(step.0 == "plus" ? "Zoom in" : "Zoom out")
             }
             Button { HapticsManager.shared.impact(.light); recenter() } label: {
-                Image(systemName: "scope").font(.system(size: 15, weight: .bold)).foregroundColor(.black).frame(width: 40, height: 40)
-                    .background(.ultraThinMaterial, in: Circle()).overlay(Circle().stroke(Color.black.opacity(0.08)))
+                Image(systemName: "scope").font(.system(size: 15, weight: .bold)).foregroundColor(ink).frame(width: 40, height: 40)
+                    .background(.ultraThinMaterial, in: Circle()).overlay(Circle().stroke(ink.opacity(0.08)))
             }.buttonStyle(.plain).accessibilityLabel("Back to the middle")
         }
         .padding(.trailing, 14).padding(.bottom, GameHubView.homeIndicatorInset + 18)
@@ -476,10 +559,10 @@ struct AgentMapView: View {
 // MARK: - New topic
 
 private struct NewTopicSheet: View {
-    @ObservedObject var agents: AgentsStore
+    let agents: [SpacesAgent]
     let onCreate: (String, SpacesAgent, Bool) -> Void
     @State private var title = ""
-    @State private var chosen = "builtin-dots"
+    @State private var chosen = ""
     @State private var runNow = true
     @FocusState private var focused: Bool
 
@@ -499,11 +582,11 @@ private struct NewTopicSheet: View {
                 Section("First dot") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 14) {
-                            ForEach(agents.all, id: \.id) { agent in
+                            ForEach(agents, id: \.id) { agent in
                                 Button { chosen = agent.id } label: {
                                     VStack(spacing: 4) {
                                         AgentAvatar(agent: agent, size: 52)
-                                            .overlay(Circle().stroke(chosen == agent.id ? Color.black : .clear, lineWidth: 3).padding(-4))
+                                            .overlay(Circle().stroke(chosen == agent.id ? Color.primary : .clear, lineWidth: 3).padding(-4))
                                         Text(agent.name).font(.system(size: 11, weight: .bold)).foregroundColor(.black)
                                     }
                                 }.buttonStyle(.plain)
@@ -519,12 +602,12 @@ private struct NewTopicSheet: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
-                        let agent = agents.all.first { $0.id == chosen } ?? agents.all[0]
+                        let agent = agents.first { $0.id == chosen } ?? agents[0]
                         onCreate(title, agent, runNow)
                     }.disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).fontWeight(.bold)
                 }
             }
-            .onAppear { focused = true }
+            .onAppear { focused = true; if chosen.isEmpty { chosen = agents.first?.id ?? "" } }
         }
         .preferredColorScheme(.light)
     }
@@ -606,5 +689,89 @@ private struct NodeSheet: View {
         case .done: Label("Done", systemImage: "checkmark.circle.fill").font(.system(size: 12, weight: .bold)).foregroundColor(.green)
         case .failed: Label("Failed", systemImage: "exclamationmark.circle.fill").font(.system(size: 12, weight: .bold)).foregroundColor(.red)
         }
+    }
+}
+
+
+// MARK: - Workspace
+
+/// Make or change a workspace: its name, its look (the old universes) and which dots are on its map.
+private struct WorkspaceSheet: View {
+    let agents: [SpacesAgent]
+    let space: Workspace?
+    let onSave: (String, UniverseTheme, [String]?) -> Void
+
+    @State private var name = ""
+    @State private var theme: UniverseTheme = .white
+    @State private var chosen: Set<String> = []
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") { TextField("Like \"School\" or \"My shop\"", text: $name).focused($focused) }
+                Section("Look") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 14) {
+                            ForEach(UniverseTheme.allCases) { item in
+                                Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { theme = item } } label: {
+                                    VStack(spacing: 6) {
+                                        tile(item).overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(theme == item ? Color.primary : .clear, lineWidth: 3).padding(-3))
+                                        Text(item.displayName).font(.system(size: 11, weight: .bold)).foregroundColor(.primary)
+                                    }
+                                }.buttonStyle(.plain)
+                            }
+                        }.padding(.vertical, 8).padding(.horizontal, 4)
+                    }
+                }
+                Section("Dots on this map") {
+                    ForEach(agents, id: \.id) { agent in
+                        Toggle(isOn: Binding(get: { chosen.contains(agent.id) }, set: { on in if on { chosen.insert(agent.id) } else if chosen.count > 1 { chosen.remove(agent.id) } })) {
+                            HStack(spacing: 10) {
+                                AgentAvatar(agent: agent, size: 30)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(agent.name).font(.system(size: 14, weight: .semibold))
+                                    Text(agent.role).font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(space == nil ? "New workspace" : "Workspace")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(space == nil ? "Create" : "Save") {
+                        let all = Set(agents.map(\.id))
+                        onSave(name, theme, chosen == all ? nil : Array(chosen))
+                    }.fontWeight(.bold).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .onAppear {
+                if let space {
+                    name = space.name; theme = space.theme
+                    chosen = space.team.map(Set.init) ?? Set(agents.map(\.id))
+                } else {
+                    chosen = Set(agents.map(\.id)); focused = true
+                }
+            }
+        }
+    }
+
+    /// A little window onto the look: its background and grid.
+    private func tile(_ item: UniverseTheme) -> some View {
+        let palette = WorldBackground.palette(for: item)
+        return ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(palette.background)
+            Canvas { ctx, size in
+                var x: CGFloat = 8
+                while x < size.width { var y: CGFloat = 8; while y < size.height { ctx.fill(Path(ellipseIn: CGRect(x: x - 1, y: y - 1, width: 2, height: 2)), with: .color(palette.line)); y += 14 }; x += 14 }
+            }
+            Circle().fill(item.swatchColor).frame(width: 22, height: 22).overlay(Circle().stroke(Color.black.opacity(0.15)))
+        }
+        .frame(width: 64, height: 64)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.black.opacity(0.12), lineWidth: 1))
     }
 }

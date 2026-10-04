@@ -40,6 +40,8 @@ enum IconPalette {
 /// Play button at the bottom. White Space itself only starts once the
 /// player taps Play (`RootView` doesn't build the world until then).
 struct MainMenuView: View {
+    /// The old buyable game universes are gone from the menu: they became the looks of workspaces.
+    static let showsUniverses = false
     @ObservedObject var player: PlayerState
     @ObservedObject var authState: AuthState
     @ObservedObject var sync: SpacechatSync
@@ -166,7 +168,8 @@ struct MainMenuView: View {
                 // `UniversePickerRow`'s richer preview tiles (a mini
                 // screenshot of each universe's real background) instead of
                 // the old plain circular swatches.
-                HStack(alignment: .top, spacing: 28) {
+                // Universes are workspace looks now (see WorkspaceStore); the game world keeps the look it already has.
+                if Self.showsUniverses { HStack(alignment: .top, spacing: 28) {
                     UniversePickerRow(
                         options: Array(UniverseTheme.allCases),
                         selection: Binding(
@@ -177,9 +180,9 @@ struct MainMenuView: View {
                         onLockedTap: { purchaseTarget = .universe($0) }
                     )
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 8) }
 
-                if let custom = player.profile.customUniverses.first(where: { $0.id == player.profile.selectedCustomUniverseID }) {
+                if Self.showsUniverses, let custom = player.profile.customUniverses.first(where: { $0.id == player.profile.selectedCustomUniverseID }) {
                     VStack(spacing: 6) {
                         Circle().fill(RadialGradient(colors: [custom.grid.color, custom.background.color], center: .topTrailing, startRadius: 0, endRadius: 70))
                             .frame(width: 76, height: 76)
@@ -188,7 +191,7 @@ struct MainMenuView: View {
                             .font(.caption).foregroundColor(.secondary)
                     }.padding(.top, 10)
                 }
-                viewMoreButton { browseKind = .universes }
+                if Self.showsUniverses { viewMoreButton { browseKind = .universes } }
 
                 Spacer()
 
@@ -1375,7 +1378,7 @@ private struct StoreView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     balanceCard
                     membershipSection
-                    universesSection
+                    if MainMenuView.showsUniverses { universesSection }
                     dotStylesSection
                     pointPacksSection
                     earnPointsSection
