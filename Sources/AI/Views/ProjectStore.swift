@@ -15,6 +15,9 @@ struct Project: Codable, Identifiable, Equatable {
     var folder: String?
     /// Set when the project is a folder's own space: the team works on that folder's real files, and the conversation is kept with it.
     var linkedFolder: String?
+    /// How the dots are connected (dot id → the dot it reports to; "" = cut loose) and where the person put them on the map.
+    var links: [String: String]? = nil
+    var positions: [String: [Double]]? = nil
 }
 
 @MainActor

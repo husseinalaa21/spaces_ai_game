@@ -26,6 +26,8 @@ struct AgentMapView: View {
     @State private var renaming: Topic?
     @State private var editingSpace: Workspace?
     @State private var editingDot: SpacesAgent?
+    @State private var showMembers = false
+    @ObservedObject private var shop = StoreManager.shared
     @State private var creatingDot = false
     @State private var creatingSpace = false
     @State private var renameText = ""
@@ -167,6 +169,7 @@ struct AgentMapView: View {
         }
         .sheet(isPresented: $creatingDot) { DotEditorView(store: agents, agent: nil) { creatingDot = false } }
         .sheet(item: $editingDot) { dot in DotEditorView(store: agents, agent: dot) { editingDot = nil } }
+        .sheet(isPresented: $showMembers) { MembersOnlySheet() }
         .sheet(isPresented: $creatingSpace) {
             WorkspaceSheet(agents: agents.all, space: nil) { name, theme, team in
                 creatingSpace = false
@@ -335,9 +338,13 @@ struct AgentMapView: View {
     }
 
     private func agentDot(_ agent: SpacesAgent) -> some View {
-        Button { HapticsManager.shared.impact(.light); chatting = agent } label: {
+        Button {
+            HapticsManager.shared.impact(.light)
+            if agent.membersOnly && !shop.isMember { showMembers = true } else { chatting = agent }
+        } label: {
             VStack(spacing: 6) {
                 AgentAvatar(agent: agent, size: Self.dotSize)
+                    .overlay(alignment: .topTrailing) { if agent.membersOnly && !shop.isMember { MemberLockBadge().offset(x: 4, y: -2) } }
                 Text(agent.name).font(.system(size: 15, weight: .heavy)).foregroundColor(ink)
                 Text(agent.bio.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? agent.role : agent.bio).font(.system(size: 11, weight: .medium)).foregroundColor(ink.opacity(0.45))
                     .lineLimit(2).multilineTextAlignment(.center).frame(width: 150)
@@ -346,7 +353,7 @@ struct AgentMapView: View {
         .buttonStyle(PressableButtonStyle())
         .contextMenu {
             Button("Customize", systemImage: "paintpalette") { editingDot = agent }
-            Button("Chat", systemImage: "bubble.left") { chatting = agent }
+            Button("Chat", systemImage: "bubble.left") { if agent.membersOnly && !shop.isMember { showMembers = true } else { chatting = agent } }
         }
         .accessibilityLabel("Chat with \(agent.name)")
         .accessibilityAction(named: "Customize") { editingDot = agent }

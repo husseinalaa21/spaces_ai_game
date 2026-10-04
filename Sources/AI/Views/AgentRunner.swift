@@ -21,6 +21,8 @@ final class AgentRunner: ObservableObject {
     private let approvals: ApprovalCenter
     private var job: Task<Void, Never>?
     static let maxSteps = 10
+    /// How many turns this team gets: more dots and more levels need more turns.
+    private(set) var stepLimit = AgentRunner.maxSteps
 
     init(folders: FolderStore = .shared, approvals: ApprovalCenter = .shared) {
         self.folders = folders
@@ -72,31 +74,48 @@ final class AgentRunner: ObservableObject {
 
     func stop() { job?.cancel(); approvals.denyAll() }
     func reset() { transcript = []; summary = nil; notice = nil; copies = [] }
+    /// Removes a copy from the map once it has finished (a copy that is still working is left alone).
+    func removeCopy(_ id: UUID) { copies.removeAll { $0.id == id && $0.status != .working } }
 
     // MARK: A team on a task
 
-    /// The first agent leads: it hands work to the others by name and finishes with a summary.
-    func runTeam(task: String, team: [SpacesAgent], folder: String?, canEdit: Bool, store: AgentsStore) {
+    /// The first agent leads: it hands work to the dots it is connected to by name and finishes with a summary.
+    /// `parents` says who each dot reports to (dot id → the dot above it); dots only talk to the ones they are connected to,
+    /// and a dot that is done sends its result back up to the dot above it, until it reaches the lead. Without it every dot reports to the lead.
+    func runTeam(task: String, team: [SpacesAgent], folder: String?, canEdit: Bool, store: AgentsStore, parents: [String: String]? = nil) {
         guard !running, let lead = team.first else { return }
         reset()
+        stepLimit = max(Self.maxSteps, min(24, team.count * 3))
         running = true
         transcript.append(AgentMessage(kind: .user, from: "You", to: lead.name, text: task))
         job = Task { [weak self] in
-            await self?.teamLoop(task: task, team: team, lead: lead, folder: folder, canEdit: canEdit, store: store)
+            await self?.teamLoop(task: task, team: team, lead: lead, folder: folder, canEdit: canEdit, store: store,
+                                 parents: parents ?? Dictionary(uniqueKeysWithValues: team.dropFirst().map { ($0.id, lead.id) }))
             self?.running = false; self?.speaking = nil
         }
     }
 
-    private func teamLoop(task: String, team: [SpacesAgent], lead: SpacesAgent, folder: String?, canEdit: Bool, store: AgentsStore) async {
+    private func teamLoop(task: String, team: [SpacesAgent], lead: SpacesAgent, folder: String?, canEdit: Bool, store: AgentsStore, parents: [String: String]) async {
         var speaker = lead
         var outcome = Outcome()
         var rotation = 0
-        for step in 1...Self.maxSteps {
+        func children(_ id: String) -> [SpacesAgent] { team.filter { parents[$0.id] == id } }
+        func parent(_ agent: SpacesAgent) -> SpacesAgent? { parents[agent.id].flatMap { id in team.first { $0.id == id } } }
+        for step in 1...stepLimit {
             if Task.isCancelled { transcript.append(system("Stopped.")); return }
             speaking = speaker.name
+            // a dot only talks to the dots it is connected to: the ones below it and the one above it
+            let below = children(speaker.id), above = parent(speaker)
+            let reachable = below + (above.map { [$0] } ?? [])
+            var role = ""
+            if speaker.id == lead.id {
+                if !below.isEmpty { role = "\n\nYou lead. Your direct teammates are \(below.map(\.name).joined(separator: ", ")); they may have helpers of their own, but you only talk to your direct teammates." }
+            } else if let above {
+                role = "\n\nYou are connected to \(above.name) above you" + (below.isEmpty ? "" : " and to \(below.map(\.name).joined(separator: ", ")) below you; hand parts of your job to them by name and gather what they send back") + ". When your part is done, send the result back to \(above.name) by setting \"to\" to \"\(above.name)\"."
+            }
             let turn: Turn
             do {
-                turn = try await ask(agent: speaker, team: team, task: task, folder: folder, canEdit: canEdit, outcome: outcome,
+                turn = try await ask(agent: speaker, team: reachable, task: task + role, folder: folder, canEdit: canEdit, outcome: outcome,
                                      step: step, lead: speaker.id == lead.id, notes: store.notes)
             } catch {
                 transcript.append(system(Self.explain(error))); return
@@ -111,18 +130,18 @@ final class AgentRunner: ObservableObject {
                 if let summary, !summary.isEmpty, summary != turn.text { transcript.append(AgentMessage(kind: .agent, from: speaker.name, to: "You", text: summary)) }
                 return
             }
-            // Who goes next: whoever was addressed by name, else the lead after a teammate, else the next teammate.
-            if let to = turn.to, let named = team.first(where: { $0.name == to }), named.id != speaker.id {
+            // Who goes next: the connected dot that was addressed by name; otherwise a dot sends its result up to the dot above it,
+            // and the lead moves on to its next direct teammate.
+            if let to = turn.to, let named = reachable.first(where: { $0.name == to }), named.id != speaker.id {
                 speaker = named
             } else if speaker.id != lead.id {
-                speaker = lead
+                speaker = above ?? lead
             } else {
-                let others = team.filter { $0.id != lead.id }
-                guard !others.isEmpty else { continue }
-                speaker = others[rotation % others.count]; rotation += 1
+                guard !below.isEmpty else { continue }
+                speaker = below[rotation % below.count]; rotation += 1
             }
         }
-        transcript.append(system("Stopped after \(Self.maxSteps) steps. You can ask them to continue."))
+        transcript.append(system("Stopped after \(stepLimit) steps. You can ask them to continue."))
     }
 
     // MARK: One agent, one conversation
@@ -374,7 +393,7 @@ final class AgentRunner: ObservableObject {
             "observations": outcome.files.map { ["path": $0.path, "content": $0.content] },
             "results": outcome.results.map { ["tool": $0.tool, "label": $0.label, "content": $0.content] },
             "notes": Array(notes.suffix(12)),
-            "step": step, "maxSteps": override == nil ? Self.maxSteps : 4, "lead": lead, "copy": copy
+            "step": step, "maxSteps": override == nil ? stepLimit : 4, "lead": lead, "copy": copy
         ]
         if let folder {
             body["workspace"] = ["name": folder, "canEdit": canEdit,

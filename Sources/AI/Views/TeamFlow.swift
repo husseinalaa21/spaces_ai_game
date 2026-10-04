@@ -69,6 +69,8 @@ struct TeamLobbyView: View {
     @State private var scale: CGFloat = 0.62
     @State private var pinchBase: CGFloat?
     @State private var touched = false
+    @State private var showMembers = false
+    @ObservedObject private var shop = StoreManager.shared
 
     private var dark: Bool { palette.isDark }
     private var ink: Color { dark ? .white : .black }
@@ -104,6 +106,7 @@ struct TeamLobbyView: View {
         }
         .ignoresSafeArea()
         .preferredColorScheme(dark ? .dark : .light)
+        .sheet(isPresented: $showMembers) { MembersOnlySheet() }
         .task {
             for i in 0..<agents.count {
                 try? await Task.sleep(nanoseconds: 300_000_000)
@@ -174,6 +177,7 @@ struct TeamLobbyView: View {
             VStack(spacing: 6) {
                 ZStack(alignment: .topTrailing) {
                     AgentAvatar(agent: agent, size: dotSize)
+                        .overlay(alignment: .topTrailing) { if agent.membersOnly && !shop.isMember { MemberLockBadge().offset(x: 4, y: -2) } }
                         .overlay(Circle().stroke(order != nil ? Color(red: 0.16, green: 0.47, blue: 1) : .clear, lineWidth: 4).padding(-6))
                         .scaleEffect(order != nil ? 1.1 : 1)
                     if let order {
@@ -195,6 +199,7 @@ struct TeamLobbyView: View {
 
     private func toggle(_ agent: SpacesAgent) {
         HapticsManager.shared.impact(.light)
+        if agent.membersOnly && !shop.isMember { showMembers = true; return }
         withAnimation(.spring(response: 0.4, dampingFraction: 0.72)) {
             if let i = picked.firstIndex(of: agent.id) { picked.remove(at: i) } else { picked.append(agent.id) }
         }
@@ -317,6 +322,7 @@ struct TeamLobbyView: View {
 /// The team, you, and the work. The dots ask for the product's name and idea, then work on it, talking to each other and to you.
 /// When they are done you can keep it: it goes on the home map.
 struct ProjectRoomView: View {
+    /// The dots the room opened with (the first one leads). Dots can be added and deleted on the map after that: see `crew`.
     let team: [SpacesAgent]
     @ObservedObject var agents: AgentsStore
     @ObservedObject var folders: FolderStore
@@ -346,7 +352,15 @@ struct ProjectRoomView: View {
     @State private var filesNote = ""
     @State private var messagesOpen = false
     @State private var filesOpen = false
+    @State private var graph = UniverseGraph()
+    @State private var added: [SpacesAgent] = []
+    @State private var removed: Set<String> = []
+    @State private var showAdd = false
+    @State private var addParent: String?
     @FocusState private var focused: Bool
+
+    /// Everyone on the map now: the dots it opened with and the ones added, without the ones deleted.
+    private var crew: [SpacesAgent] { (team + added.filter { a in !team.contains(where: { $0.id == a.id }) }).filter { !removed.contains($0.id) } }
 
     private var lead: SpacesAgent { team.first ?? agents.all[0] }
     /// A copy ("Dots copy 2") looks exactly like the dot it was made from.
@@ -364,13 +378,15 @@ struct ProjectRoomView: View {
     var body: some View {
         ZStack {
             // The project's universe fills the screen: the team and its copies on a map, in the workspace's look.
-            ProjectUniverse(team: team, copies: runner.copies, speaking: runner.speaking ?? typing, running: runner.running, palette: palette,
-                            latest: latestWords, finished: step == .done, summary: summary, leadFooter: step == .done ? AnyView(finishActions) : nil, agentFor: agent(named:))
+            ProjectUniverse(team: crew, copies: runner.copies, speaking: runner.speaking ?? typing, running: runner.running, palette: palette,
+                            latest: latestWords, finished: step == .done, summary: summary, leadFooter: step == .done ? AnyView(finishActions) : nil,
+                            graph: $graph, onAdd: { parent in addParent = parent; showAdd = true }, onDelete: removeDot, onDeleteCopy: { runner.removeCopy($0) },
+                            agentFor: agent(named:))
                 .ignoresSafeArea()
             VStack(spacing: 0) {
                 topBar
                 HStack(alignment: .top, spacing: 10) {
-                    filesCard
+                    VStack(spacing: 8) { filesCard; addCard }
                     Spacer(minLength: 0)
                     messagesCard
                 }
@@ -385,6 +401,10 @@ struct ProjectRoomView: View {
         .overlay(alignment: .bottom) { ApprovalCard().padding(.bottom, 80) }
         .preferredColorScheme(palette.isDark ? .dark : .light)
         .task { await begin() }
+        .sheet(isPresented: $showAdd) {
+            AddDotSheet(agents: agents.all.filter { dot in !crew.contains(where: { $0.id == dot.id }) }, parent: addParent.flatMap { id in crew.first { $0.id == id }?.name } ?? lead.name, running: runner.running) { dot in addDot(dot) }
+        }
+        .onChange(of: graph) { _ in if forFolder != nil, step != .askIdea, !messages.isEmpty { autoSave() } }
         .onDisappear { if forFolder != nil, !messages.isEmpty { autoSave() } }
         // a folder's space keeps itself as it goes, so leaving at any moment still reopens exactly here
         .onChange(of: messages.count) { _ in if forFolder != nil, step != .askIdea { autoSave() } }
@@ -489,6 +509,42 @@ struct ProjectRoomView: View {
         .padding(.top, GameHubView.bannerTopInset + 52).padding(.trailing, 12)
     }
 
+    // MARK: the dots on the map
+
+    /// A round + under Files: choose a dot to bring into the universe.
+    private var addCard: some View {
+        Button { addParent = nil; showAdd = true } label: {
+            Image(systemName: "plus").font(.system(size: 19, weight: .bold)).foregroundColor(ink)
+                .frame(width: 48, height: 48)
+                .background(cardFill, in: Circle())
+                .overlay(Circle().stroke(ink.opacity(0.12)))
+        }.buttonStyle(.plain).accessibilityLabel("Add a dot")
+    }
+
+    /// Brings a dot in under the one that was tapped (or under the lead).
+    private func addDot(_ dot: SpacesAgent) {
+        guard !crew.contains(where: { $0.id == dot.id }) else { return }
+        removed.remove(dot.id)
+        if !team.contains(where: { $0.id == dot.id }) { added.append(dot) }
+        let parent = addParent.flatMap { id in crew.contains(where: { $0.id == id }) ? id : nil } ?? lead.id
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.75)) { graph.links[dot.id] = parent; graph.positions[dot.id] = nil }
+        HapticsManager.shared.success()
+        if forFolder != nil, !messages.isEmpty { autoSave() }
+    }
+
+    /// Takes a dot off the map; the dots that reported to it now report to the dot above it.
+    private func removeDot(_ id: String) {
+        guard id != lead.id, !runner.running else { return }
+        let above = graph.parent(of: id, in: crew) ?? ""
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+            for child in graph.children(of: id, in: crew) { graph.links[child.id] = above; graph.positions[child.id] = nil }
+            graph.links[id] = nil; graph.positions[id] = nil
+            added.removeAll { $0.id == id }
+            removed.insert(id)
+        }
+        if forFolder != nil, !messages.isEmpty { autoSave() }
+    }
+
     // MARK: pieces
 
     private var topBar: some View {
@@ -503,7 +559,7 @@ struct ProjectRoomView: View {
             }
             Spacer(minLength: 8)
             HStack(spacing: -8) {
-                ForEach(team) { member in
+                ForEach(crew) { member in
                     AgentAvatar(agent: member, size: 30, animated: false)
                         .overlay(Circle().stroke(palette.background, lineWidth: 2))
                         .scaleEffect(runner.speaking == member.name || typing == member.name ? 1.2 : 1)
@@ -634,6 +690,7 @@ struct ProjectRoomView: View {
         guard messages.isEmpty else { return }
         if let project {
             // a saved project: its whole conversation, finished
+            graph = UniverseGraph(project: project)
             projectID = project.id; name = project.name; idea = project.idea; summary = project.summary; saved = true; folder = forFolder ?? project.folder
             messages = project.transcript
             // left before the first task was given: carry on asking for it; otherwise it is where it was left
@@ -644,13 +701,13 @@ struct ProjectRoomView: View {
         if let forFolder {
             // a folder's space: the folder is the project, so the first question is what to do in it
             name = forFolder; folder = forFolder; step = .askIdea
-            let others = team.dropFirst().map(\.name)
+            let others = crew.dropFirst().map(\.name)
             let crew = others.isEmpty ? "" : " \(others.joined(separator: ", ")) and I are here too."
             await say(lead, "Hi! I'm \(lead.name).\(crew) We're in your folder “\(forFolder)”. What should we do in it?")
             focused = true
             return
         }
-        let others = team.dropFirst().map(\.name)
+        let others = crew.dropFirst().map(\.name)
         let crew = others.isEmpty ? "" : " With \(others.joined(separator: ", ")) we will build it together."
         await say(lead, "Hi! I'm \(lead.name).\(crew) What is the name of your product?")
         focused = true
@@ -665,13 +722,13 @@ struct ProjectRoomView: View {
         case .askName:
             name = String(text.prefix(60))
             step = .askIdea
-            let asker = team.count > 1 ? team[1] : lead
+            let asker = crew.count > 1 ? crew[1] : lead
             await say(asker, "\(name) — I like it. What is the idea behind it? Who is it for and what should it do?")
             focused = true
         case .askIdea:
             idea = text
             step = .working
-            let others = team.dropFirst().map(\.name)
+            let others = crew.dropFirst().map(\.name)
             await say(lead, others.isEmpty ? "Got it. Let me start." : "Got it. \(others.joined(separator: " and ")), let's get to work. I'll split it up.", to: "team")
             await run(change: nil)
         case .done:
@@ -695,7 +752,7 @@ struct ProjectRoomView: View {
         summary = ""
         // the project's folder exists from the start, so its files show up top left as they are made
         if folder == nil { folder = FolderStore.shared.makeFolder(name.isEmpty ? "Project" : name) }
-        runner.runTeam(task: task, team: team, folder: nil, canEdit: false, store: agents)
+        runner.runTeam(task: task, team: graph.connected(crew), folder: nil, canEdit: false, store: agents, parents: graph.parentMap(crew))
     }
 
     /// Work on the folder's real files: read before changing, small exact edits, every change asks first and can be undone from Folders.
@@ -711,15 +768,16 @@ struct ProjectRoomView: View {
         focused = false
         summary = ""
         folder = target
-        runner.runTeam(task: task, team: team, folder: target, canEdit: true, store: agents)
+        runner.runTeam(task: task, team: graph.connected(crew), folder: target, canEdit: true, store: agents, parents: graph.parentMap(crew))
     }
 
     /// A folder's space keeps itself: the team, the conversation and the last result are saved after every run, and when it is closed.
     private func autoSave() {
         guard let target = forFolder else { return }
         let all = Array((messages + archive + work).suffix(120))
-        projects.save(Project(id: projectID, name: target, idea: idea, teamIDs: team.map(\.id), summary: summary, transcript: all,
-                              workspaceID: workspace.id, folder: target, linkedFolder: target))
+        projects.save(Project(id: projectID, name: target, idea: idea, teamIDs: crew.map(\.id), summary: summary, transcript: all,
+                              workspaceID: workspace.id, folder: target, linkedFolder: target,
+                              links: graph.links, positions: graph.savedPositions))
         saved = true
     }
 
@@ -728,7 +786,7 @@ struct ProjectRoomView: View {
         let store = FolderStore.shared
         if folder == nil { folder = store.makeFolder(name.isEmpty ? "Project" : name) }
         guard let folder else { filesNote = "The work could not be saved to a folder."; return }
-        let members = team.map(\.name).joined(separator: ", ")
+        let members = crew.map(\.name).joined(separator: ", ")
         let all = messages + archive + work
         var chat = "# \(name)\n\nTeam: \(members)\n\n"
         for m in all where m.kind == .user || m.kind == .agent {
@@ -748,8 +806,8 @@ struct ProjectRoomView: View {
 
     private func save() {
         let all = Array((messages + archive + work).suffix(80))
-        projects.save(Project(id: projectID, name: name.isEmpty ? "Untitled" : name, idea: idea, teamIDs: team.map(\.id), summary: summary,
-                              transcript: all, workspaceID: workspace.id, folder: folder))
+        projects.save(Project(id: projectID, name: name.isEmpty ? "Untitled" : name, idea: idea, teamIDs: crew.map(\.id), summary: summary,
+                              transcript: all, workspaceID: workspace.id, folder: folder, links: graph.links, positions: graph.savedPositions))
         HapticsManager.shared.success()
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { saved = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { onClose() }
@@ -761,6 +819,94 @@ struct ProjectRoomView: View {
 
 /// The team at work, on a map: the lead in the middle, the teammates around it, and every copy orbiting the dot it was made from, all joined
 /// by lines. The dot that is speaking grows and shows its latest words; a working copy pulses; a finished one gets a tick.
+/// How the dots of a project are wired: who reports to whom, and where the person put each dot. The lead (first dot) is the root.
+struct UniverseGraph: Equatable {
+    /// dot id → the dot it reports to. No entry: it reports to the lead. "": cut loose from everyone.
+    var links: [String: String] = [:]
+    /// Where the person left a dot, from the middle of the map.
+    var positions: [String: CGPoint] = [:]
+
+    init() {}
+    init(project: Project) {
+        links = project.links ?? [:]
+        positions = (project.positions ?? [:]).reduce(into: [:]) { out, row in if row.value.count == 2 { out[row.key] = CGPoint(x: row.value[0], y: row.value[1]) } }
+    }
+    var savedPositions: [String: [Double]] { positions.mapValues { [Double($0.x), Double($0.y)] } }
+
+    func parent(of id: String, in crew: [SpacesAgent]) -> String? {
+        guard let lead = crew.first, id != lead.id else { return nil }
+        guard let link = links[id] else { return lead.id }
+        return link.isEmpty || !crew.contains(where: { $0.id == link }) ? nil : link
+    }
+
+    func children(of id: String, in crew: [SpacesAgent]) -> [SpacesAgent] { crew.filter { parent(of: $0.id, in: crew) == id } }
+
+    /// Everything below a dot (its helpers, their helpers…).
+    func descendants(of id: String, in crew: [SpacesAgent]) -> Set<String> {
+        var out = Set<String>(), queue = [id]
+        while let next = queue.popLast() {
+            for child in children(of: next, in: crew) where !out.contains(child.id) { out.insert(child.id); queue.append(child.id) }
+        }
+        return out
+    }
+
+    /// The dots the lead can reach through connections: the ones that take part in the work.
+    func connected(_ crew: [SpacesAgent]) -> [SpacesAgent] {
+        guard let lead = crew.first else { return [] }
+        let below = descendants(of: lead.id, in: crew)
+        return [lead] + crew.filter { below.contains($0.id) }
+    }
+
+    /// Who each connected dot reports to.
+    func parentMap(_ crew: [SpacesAgent]) -> [String: String] {
+        var out: [String: String] = [:]
+        for member in connected(crew).dropFirst() { if let p = parent(of: member.id, in: crew) { out[member.id] = p } }
+        return out
+    }
+
+    /// A dot may not report to itself or to something below it.
+    func canConnect(_ id: String, to target: String, in crew: [SpacesAgent]) -> Bool {
+        guard let lead = crew.first, id != lead.id, id != target else { return false }
+        return !descendants(of: id, in: crew).contains(target)
+    }
+
+    /// Where every dot sits: the lead in the middle, its helpers around it, theirs around them, loose dots further out. A spot the person
+    /// chose wins; a dot nobody moved follows its parent. `overrides` is for a dot being dragged right now.
+    func layout(crew: [SpacesAgent], overrides: [String: CGPoint] = [:]) -> [String: CGPoint] {
+        guard let lead = crew.first else { return [:] }
+        var out: [String: CGPoint] = [:]
+        func settle(_ id: String, default point: CGPoint) -> CGPoint {
+            let chosen = overrides[id] ?? positions[id] ?? point
+            out[id] = chosen
+            return chosen
+        }
+        func place(children kids: [SpacesAgent], around origin: CGPoint, facing angle: Double, radius: Double, spread: Double) {
+            let n = kids.count
+            for (j, kid) in kids.enumerated() {
+                let theta = n == 1 ? angle : angle + (Double(j) - Double(n - 1) / 2) * min(spread, Double.pi * 1.6 / Double(n))
+                let point = settle(kid.id, default: CGPoint(x: origin.x + cos(theta) * radius, y: origin.y + sin(theta) * radius * 0.92))
+                let outward = atan2(point.y - origin.y, point.x - origin.x)
+                place(children: children(of: kid.id, in: crew), around: point, facing: outward, radius: 112, spread: 0.85)
+            }
+        }
+        let center = settle(lead.id, default: .zero)
+        let first = children(of: lead.id, in: crew)
+        for (j, kid) in first.enumerated() {
+            let theta = -Double.pi / 2 + (Double(j) + (first.count % 2 == 0 ? 0.5 : 0)) * 2 * Double.pi / Double(max(1, first.count))
+            let point = settle(kid.id, default: CGPoint(x: center.x + cos(theta) * 150, y: center.y + sin(theta) * 150 * 0.9))
+            place(children: children(of: kid.id, in: crew), around: point, facing: atan2(point.y - center.y, point.x - center.x), radius: 112, spread: 0.85)
+        }
+        // loose dots (and what hangs from them) float further out
+        let loose = crew.dropFirst().filter { parent(of: $0.id, in: crew) == nil }
+        for (j, dot) in loose.enumerated() {
+            let theta = Double.pi / 4 + Double(j) * 2 * Double.pi / Double(max(1, loose.count))
+            let point = settle(dot.id, default: CGPoint(x: cos(theta) * 300, y: sin(theta) * 280))
+            place(children: children(of: dot.id, in: crew), around: point, facing: theta, radius: 112, spread: 0.85)
+        }
+        return out
+    }
+}
+
 struct ProjectUniverse: View {
     let team: [SpacesAgent]
     let copies: [AgentRunner.CopyJob]
@@ -772,61 +918,104 @@ struct ProjectUniverse: View {
     var finished = false
     var summary = ""
     var leadFooter: AnyView? = nil
+    /// The wiring and the places of the dots. Hold a dot to move it, drop it on another dot to connect it, or on the bin to delete it.
+    @Binding var graph: UniverseGraph
+    var onAdd: (String?) -> Void = { _ in }
+    var onDelete: (String) -> Void = { _ in }
+    var onDeleteCopy: (UUID) -> Void = { _ in }
     let agentFor: (String) -> SpacesAgent?
 
     @State private var offset = CGSize.zero
     @State private var dragBase: CGSize?
     @State private var scale: CGFloat = 0.85
     @State private var pinchBase: CGFloat?
+    // holding a dot
+    @State private var held: String?
+    @State private var heldPoint = CGPoint.zero
+    @State private var heldBase = CGPoint.zero
+    @State private var overTarget: String?
+    @State private var overBin = false
+    @State private var copySpots: [UUID: CGPoint] = [:]
+    // tapping a dot
+    @State private var menuFor: String?
+    @State private var menuOpen = false
+    @State private var hint: String?
 
     private var dark: Bool { palette.isDark }
     private var ink: Color { dark ? .white : .black }
-    private let ring: CGFloat = 150
+    private let blue = Color(red: 0.16, green: 0.47, blue: 1)
 
-    private func teamPoint(_ index: Int) -> CGPoint {
-        if index == 0 { return .zero }
-        let n = max(1, team.count - 1)
-        let angle = -Double.pi / 2 + Double(index - 1) * 2 * Double.pi / Double(n)
-        return CGPoint(x: cos(angle) * ring, y: sin(angle) * ring * 0.9)
-    }
+    private var lead: SpacesAgent? { team.first }
 
-    private func copyPoint(_ job: AgentRunner.CopyJob) -> CGPoint {
-        guard let i = team.firstIndex(where: { $0.id == job.parentID }) else { return .zero }
-        let base = teamPoint(i)
+    /// Where a copy sits: where the person left it, or near the dot it was made from.
+    private func copySpot(_ job: AgentRunner.CopyJob, _ spots: [String: CGPoint]) -> CGPoint {
+        if held == "copy:\(job.id)" { return heldPoint }
+        if let own = copySpots[job.id] { return own }
+        let base = spots[job.parentID] ?? .zero
         let angle = Double(job.number) * 0.9 + 0.6
         return CGPoint(x: base.x + cos(angle) * 78, y: base.y + sin(angle) * 78)
     }
 
     var body: some View {
         GeometryReader { geo in
+            let lifted: [String: CGPoint] = held.map { $0.hasPrefix("copy:") ? [:] : [$0: heldPoint] } ?? [:]
+            let spots = graph.layout(crew: team, overrides: lifted)
+            let bin = CGPoint(x: geo.size.width / 2, y: geo.size.height - 210)
             ZStack {
                 palette.background
                 backdrop
                 TimelineView(.animation) { timeline in
                     let t = timeline.date.timeIntervalSinceReferenceDate
+                    let at: (String, Int) -> CGPoint = { id, i in
+                        let base = spots[id] ?? .zero
+                        return self.held == id ? base : self.drift(base, i, t)
+                    }
                     ZStack {
                         Canvas { ctx, size in
                             let c = CGPoint(x: size.width / 2, y: size.height / 2)
-                            for i in 1..<max(1, team.count) {
-                                let p = drift(teamPoint(i), i, t)
-                                var line = Path(); line.move(to: c); line.addLine(to: CGPoint(x: c.x + p.x, y: c.y + p.y))
-                                ctx.stroke(line, with: .color(Color(red: 0.16, green: 0.47, blue: 1).opacity(0.5)), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                            for (i, member) in team.enumerated() {
+                                guard let parentID = graph.parent(of: member.id, in: team), let pi = team.firstIndex(where: { $0.id == parentID }) else { continue }
+                                let a = at(parentID, pi), b = at(member.id, i)
+                                let from = CGPoint(x: c.x + a.x, y: c.y + a.y), to = CGPoint(x: c.x + b.x, y: c.y + b.y)
+                                var line = Path(); line.move(to: from); line.addLine(to: to)
+                                let active = overTarget == parentID && held == member.id
+                                ctx.stroke(line, with: .color(blue.opacity(active ? 0.9 : 0.5)), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                                // a small arrow along the line, pointing up to the dot it reports to
+                                let mid = CGPoint(x: from.x + (to.x - from.x) * 0.5, y: from.y + (to.y - from.y) * 0.5)
+                                let ang = atan2(from.y - to.y, from.x - to.x)
+                                var arrow = Path()
+                                arrow.move(to: CGPoint(x: mid.x + cos(ang) * 7, y: mid.y + sin(ang) * 7))
+                                arrow.addLine(to: CGPoint(x: mid.x + cos(ang + 2.5) * 7, y: mid.y + sin(ang + 2.5) * 7))
+                                arrow.addLine(to: CGPoint(x: mid.x + cos(ang - 2.5) * 7, y: mid.y + sin(ang - 2.5) * 7))
+                                arrow.closeSubpath()
+                                ctx.fill(arrow, with: .color(blue.opacity(0.7)))
                             }
                             for job in copies {
                                 guard let pi = team.firstIndex(where: { $0.id == job.parentID }) else { continue }
-                                let a = drift(teamPoint(pi), pi, t), b = drift(copyPoint(job), 20 + job.number, t)
+                                let a = at(job.parentID, pi)
+                                let spot = copySpot(job, spots)
+                                let b = held == "copy:\(job.id)" ? spot : drift(spot, 20 + job.number, t)
                                 var line = Path(); line.move(to: CGPoint(x: c.x + a.x, y: c.y + a.y)); line.addLine(to: CGPoint(x: c.x + b.x, y: c.y + b.y))
-                                let color: Color = job.status == .failed ? .red : (job.status == .done ? .green : Color(red: 0.16, green: 0.47, blue: 1))
+                                let color: Color = job.status == .failed ? .red : (job.status == .done ? .green : blue)
                                 ctx.stroke(line, with: .color(color.opacity(job.status == .working ? 0.8 : 0.45)), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: job.status == .working ? [5, 5] : []))
                             }
                         }
                         ForEach(Array(team.enumerated()), id: \.element.id) { index, member in
-                            let p = drift(teamPoint(index), index, t)
-                            member_view(member, lead: index == 0).offset(x: p.x, y: p.y)
+                            let p = at(member.id, index)
+                            member_view(member, lead: index == 0, spots: spots)
+                                .scaleEffect(held == member.id ? 1.12 : 1)
+                                .shadow(color: .black.opacity(held == member.id ? 0.25 : 0), radius: 12, y: 6)
+                                .offset(x: p.x, y: p.y)
+                                .zIndex(held == member.id ? 5 : 0)
                         }
                         ForEach(copies) { job in
-                            let p = drift(copyPoint(job), 20 + job.number, t)
-                            copy_view(job).offset(x: p.x, y: p.y).transition(.scale(scale: 0.1).combined(with: .opacity))
+                            let spot = copySpot(job, spots)
+                            let p = held == "copy:\(job.id)" ? spot : drift(spot, 20 + job.number, t)
+                            copy_view(job, spots: spots)
+                                .scaleEffect(held == "copy:\(job.id)" ? 1.15 : 1)
+                                .offset(x: p.x, y: p.y)
+                                .zIndex(held == "copy:\(job.id)" ? 5 : 0)
+                                .transition(.scale(scale: 0.1).combined(with: .opacity))
                         }
                     }
                     .frame(width: 1600, height: 1600)
@@ -835,16 +1024,26 @@ struct ProjectUniverse: View {
                 .offset(x: offset.width, y: offset.height)
                 .frame(width: geo.size.width, height: geo.size.height)
                 .animation(.spring(response: 0.5, dampingFraction: 0.75), value: copies.count)
+                .animation(.spring(response: 0.5, dampingFraction: 0.8), value: graph)
+                if held != nil { binView(at: bin) }
+                if let hint {
+                    Text(hint).font(.system(size: 12.5, weight: .bold)).foregroundColor(ink).padding(.horizontal, 14).padding(.vertical, 9)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 150).allowsHitTesting(false)
+                        .transition(.opacity)
+                }
             }
+            .coordinateSpace(name: "universe")
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
             .contentShape(Rectangle())
             .simultaneousGesture(DragGesture(minimumDistance: 6).onChanged { v in
-                if pinchBase != nil { return }
+                if pinchBase != nil || held != nil { return }
                 if dragBase == nil { dragBase = offset }
                 offset = CGSize(width: (dragBase?.width ?? 0) + v.translation.width, height: (dragBase?.height ?? 0) + v.translation.height)
             }.onEnded { _ in dragBase = nil })
             .simultaneousGesture(MagnificationGesture().onChanged { v in
+                if held != nil { return }
                 if pinchBase == nil { pinchBase = scale }
                 scale = min(2, max(0.3, (pinchBase ?? scale) * v))
             }.onEnded { _ in pinchBase = nil })
@@ -853,7 +1052,122 @@ struct ProjectUniverse: View {
                     Image(systemName: "scope").font(.system(size: 14, weight: .bold)).foregroundColor(ink).frame(width: 36, height: 36).background(.ultraThinMaterial, in: Circle())
                 }.buttonStyle(.plain).padding(12).accessibilityLabel("Back to the middle")
             }
+            .confirmationDialog(menuTitle, isPresented: $menuOpen, titleVisibility: .visible) { menuButtons } message: { Text(menuMessage) }
+            .onChange(of: heldPoint) { point in updateTargets(point, bin: bin, spots: spots) }
         }
+    }
+
+    // MARK: holding, moving, connecting and deleting
+
+    /// Hold a dot to pick it up, then drag. Let go on another dot to connect to it, on the bin to delete it, or anywhere else to leave it there.
+    private func holdGesture(_ key: String, at spot: @escaping () -> CGPoint) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.4)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("universe")))
+            .onChanged { value in
+                guard case .second(true, let drag) = value else { return }
+                if held != key {
+                    held = key; heldBase = spot(); heldPoint = heldBase
+                    HapticsManager.shared.impact(.medium)
+                }
+                if let drag {
+                    heldPoint = CGPoint(x: heldBase.x + drag.translation.width / scale, y: heldBase.y + drag.translation.height / scale)
+                    dragLocation = drag.location
+                }
+            }
+            .onEnded { value in
+                defer { held = nil; overTarget = nil; overBin = false }
+                guard held == key, case .second(true, let drag?) = value else { return }
+                finishDrop(key, drag: drag)
+            }
+    }
+
+    @State private var dragLocation = CGPoint.zero
+
+    private func updateTargets(_ point: CGPoint, bin: CGPoint, spots: [String: CGPoint]) {
+        guard let key = held else { return }
+        overBin = hypot(dragLocation.x - bin.x, dragLocation.y - bin.y) < 70
+        if key.hasPrefix("copy:") || key == lead?.id || running { overTarget = nil; return }
+        let blocked = graph.descendants(of: key, in: team).union([key])
+        overTarget = team.first { !blocked.contains($0.id) && hypot((spots[$0.id] ?? .zero).x - point.x, (spots[$0.id] ?? .zero).y - point.y) < 66 }?.id
+    }
+
+    private func finishDrop(_ key: String, drag: DragGesture.Value) {
+        let place = CGPoint(x: max(-700, min(700, heldPoint.x)), y: max(-700, min(700, heldPoint.y)))
+        if key.hasPrefix("copy:") {
+            guard let id = UUID(uuidString: String(key.dropFirst(5))) else { return }
+            if overBin {
+                if copies.first(where: { $0.id == id })?.status == .working { say("That copy is still working. Delete it when it is done.") }
+                else { HapticsManager.shared.success(); onDeleteCopy(id) }
+            } else { copySpots[id] = place }
+            return
+        }
+        if overBin {
+            if key == lead?.id { say("The lead can't be deleted."); return }
+            if running { say("Wait for the team to stop before deleting a dot."); return }
+            HapticsManager.shared.success()
+            onDelete(key)
+            return
+        }
+        if let target = overTarget, graph.canConnect(key, to: target, in: team) {
+            graph.links[key] = target
+            graph.positions[key] = nil
+            HapticsManager.shared.success()
+            return
+        }
+        graph.positions[key] = place
+    }
+
+    private func say(_ text: String) {
+        HapticsManager.shared.impact(.rigid)
+        withAnimation { hint = text }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) { withAnimation { if hint == text { hint = nil } } }
+    }
+
+    private func binView(at point: CGPoint) -> some View {
+        let isLead = held == lead?.id
+        return VStack(spacing: 4) {
+            Image(systemName: overBin && !isLead ? "trash.fill" : "trash").font(.system(size: overBin ? 26 : 22, weight: .bold)).foregroundColor(isLead ? ink.opacity(0.3) : .white)
+                .frame(width: overBin ? 72 : 60, height: overBin ? 72 : 60)
+                .background(isLead ? ink.opacity(0.1) : Color.red.opacity(overBin ? 1 : 0.8), in: Circle())
+            Text(isLead ? "Lead stays" : "Drop to delete").font(.system(size: 11, weight: .bold)).foregroundColor(ink.opacity(0.7))
+        }
+        .position(point)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: overBin)
+        .allowsHitTesting(false)
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    // MARK: tapping a dot
+
+    private var menuAgent: SpacesAgent? { team.first { $0.id == menuFor } }
+    private var menuTitle: String { menuAgent?.name ?? "" }
+    private var menuMessage: String {
+        guard let agent = menuAgent else { return "" }
+        if agent.id == lead?.id { return "The lead of the team. Everything the team makes comes back to it." }
+        if let parent = graph.parent(of: agent.id, in: team), let name = team.first(where: { $0.id == parent })?.name { return "Reports to \(name)" }
+        return "Not connected: it is not part of the work until you connect it."
+    }
+
+    @ViewBuilder
+    private var menuButtons: some View {
+        if let agent = menuAgent {
+            Button("Add a dot under \(agent.name)") { onAdd(agent.id) }
+            if agent.id != lead?.id {
+                if graph.parent(of: agent.id, in: team) != nil {
+                    Button("Disconnect") { withAnimation { graph.links[agent.id] = "" }; HapticsManager.shared.impact(.light) }
+                }
+                ForEach(team.filter { $0.id != agent.id && $0.id != graph.parent(of: agent.id, in: team) && graph.canConnect(agent.id, to: $0.id, in: team) }) { other in
+                    Button("Connect to \(other.name)") { withAnimation { graph.links[agent.id] = other.id; graph.positions[agent.id] = nil }; HapticsManager.shared.success() }
+                }
+                Button("Delete \(agent.name)", role: .destructive) { onDelete(agent.id) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func openMenu(_ id: String) {
+        if running { say("Wait for the team to stop before changing the dots."); return }
+        menuFor = id; menuOpen = true
     }
 
     private func drift(_ p: CGPoint, _ index: Int, _ t: Double) -> CGPoint {
@@ -879,17 +1193,19 @@ struct ProjectUniverse: View {
 
     /// What this dot is doing, in a word.
     private func status(_ agent: SpacesAgent, lead: Bool) -> (text: String, color: Color) {
+        if !lead && graph.parent(of: agent.id, in: team) == nil { return ("Not connected", .orange) }
         if finished { return summary.isEmpty && lead ? ("Stopped", .orange) : (lead ? "Finished" : "Done", Color(red: 0.2, green: 0.7, blue: 0.4)) }
-        if speaking == agent.name { return ("Working…", Color(red: 0.16, green: 0.47, blue: 1)) }
+        if speaking == agent.name { return ("Working…", blue) }
         if running { return ("Waiting", ink.opacity(0.45)) }
         return ("Ready", ink.opacity(0.45))
     }
 
-    private func member_view(_ agent: SpacesAgent, lead: Bool) -> some View {
+    private func member_view(_ agent: SpacesAgent, lead: Bool, spots: [String: CGPoint]) -> some View {
         let talking = speaking == agent.name
         let finalResult = finished && lead && !summary.isEmpty
         let words = finalResult ? summary : latest[agent.name]
         let state = status(agent, lead: lead)
+        let target = overTarget == agent.id
         return VStack(spacing: 4) {
             // what the dot last said (the lead shows the final result when the work is done), above it
             if let words, !words.isEmpty {
@@ -901,15 +1217,19 @@ struct ProjectUniverse: View {
                     .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
             }
             ZStack {
-                if talking { Circle().stroke(Color(red: 0.16, green: 0.47, blue: 1), lineWidth: 3).frame(width: (lead ? 108 : 86), height: (lead ? 108 : 86)) }
+                if talking { Circle().stroke(blue, lineWidth: 3).frame(width: (lead ? 108 : 86), height: (lead ? 108 : 86)) }
+                if target { Circle().stroke(blue, style: StrokeStyle(lineWidth: 3, dash: [6, 5])).frame(width: lead ? 118 : 96, height: lead ? 118 : 96) }
                 AgentAvatar(agent: agent, size: lead ? 88 : 68)
             }
             .scaleEffect(talking ? 1.12 : 1)
+            .contentShape(Circle())
+            .onTapGesture { openMenu(agent.id) }
+            .gesture(holdGesture(agent.id, at: { spots[agent.id] ?? .zero }))
             Text(agent.name + (lead ? " · lead" : "")).font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundColor(ink)
             // its status, under it
             HStack(spacing: 4) {
                 if talking && running { ProgressView().controlSize(.mini) } else { Circle().fill(state.color).frame(width: 6, height: 6) }
-                Text(state.text).font(.system(size: 10.5, weight: .bold)).foregroundColor(state.color)
+                Text(target ? "Connect here" : state.text).font(.system(size: 10.5, weight: .bold)).foregroundColor(target ? blue : state.color)
             }
             if lead, let leadFooter { leadFooter.padding(.top, 4).transition(.opacity) }
         }
@@ -917,9 +1237,10 @@ struct ProjectUniverse: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: words)
     }
 
-    private func copy_view(_ job: AgentRunner.CopyJob) -> some View {
+    private func copy_view(_ job: AgentRunner.CopyJob, spots: [String: CGPoint]) -> some View {
         let parent = team.first { $0.id == job.parentID }
         let working = job.status == .working
+        let key = "copy:\(job.id)"
         return VStack(spacing: 2) {
             ZStack(alignment: .bottomTrailing) {
                 if let parent { AgentAvatar(agent: parent, size: 38, animated: false).opacity(working ? 0.8 : 1) }
@@ -930,6 +1251,49 @@ struct ProjectUniverse: View {
                 }
             }
             Text(job.name).font(.system(size: 10.5, weight: .heavy, design: .rounded)).foregroundColor(ink.opacity(0.75))
+        }
+        .contentShape(Rectangle())
+        .gesture(holdGesture(key, at: { copySpot(job, spots) }))
+    }
+}
+
+/// Choose a dot to bring into the universe. Claude, ChatGPT and Grok are for members.
+struct AddDotSheet: View {
+    let agents: [SpacesAgent]
+    let parent: String
+    let running: Bool
+    let onPick: (SpacesAgent) -> Void
+    @ObservedObject private var shop = StoreManager.shared
+    @State private var showMembers = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if running { Section { Text("The team is working. A new dot joins the next task.").font(.footnote).foregroundColor(.secondary) } }
+                Section("Joins \(parent)") {
+                    if agents.isEmpty { Text("Every dot is already here.").foregroundColor(.secondary) }
+                    ForEach(agents) { agent in
+                        Button {
+                            if agent.membersOnly && !shop.isMember { showMembers = true } else { onPick(agent); dismiss() }
+                        } label: {
+                            HStack(spacing: 12) {
+                                AgentAvatar(agent: agent, size: 40, animated: false)
+                                    .overlay(alignment: .topTrailing) { if agent.membersOnly && !shop.isMember { MemberLockBadge(size: 16).offset(x: 3, y: -3) } }
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(agent.name).font(.system(size: 15, weight: .semibold)).foregroundColor(.primary)
+                                    Text(agent.role).font(.system(size: 12)).foregroundColor(.secondary).lineLimit(1)
+                                }
+                                Spacer()
+                                if agent.membersOnly && !shop.isMember { Text("Members").font(.system(size: 11, weight: .bold)).foregroundColor(.secondary) }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Add a dot").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .sheet(isPresented: $showMembers) { MembersOnlySheet() }
         }
     }
 }

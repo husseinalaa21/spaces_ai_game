@@ -41,8 +41,11 @@ struct DotEditorView: View {
             Form {
                 Section {
                     VStack(spacing: 10) {
-                        SpacechatDotFace(key: dotID, size: 124, animated: true, hue: hue * 360, shape: shape ?? defaultShape)
-                            .frame(maxWidth: .infinity)
+                        Group {
+                            if let agent, agent.logo != nil { AgentAvatar(agent: agent, size: 124) }
+                            else { SpacechatDotFace(key: dotID, size: 124, animated: true, hue: hue * 360, shape: shape ?? defaultShape) }
+                        }
+                        .frame(maxWidth: .infinity)
                         Text(name.isEmpty ? (agent?.name ?? "Your dot") : name).font(.system(size: 18, weight: .heavy, design: .rounded))
                         if !bio.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Text(bio).font(.system(size: 12.5)).foregroundColor(.secondary).multilineTextAlignment(.center).lineLimit(3)
@@ -67,6 +70,7 @@ struct DotEditorView: View {
                     }
                 }
 
+                if agent?.logo == nil {
                 Section("Shape") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
@@ -90,6 +94,7 @@ struct DotEditorView: View {
                     Slider(value: $hue, in: 0...1).tint(Color(hue: hue, saturation: 0.7, brightness: 0.95))
                 }
                 .disabled(locked).opacity(locked ? 0.45 : 1)
+                }
 
                 if !isBuiltIn {
                     Section("Name") { TextField("Name, like Ava", text: $name).textInputAutocapitalization(.words) }.disabled(locked).opacity(locked ? 0.45 : 1)
@@ -231,5 +236,65 @@ struct QuickBuySheet: View {
         .padding(24)
         .presentationDetents([.height(280)])
         .task { await shop.loadProduct() }
+    }
+}
+
+
+/// A small padlock on a members-only dot for people who are not members.
+struct MemberLockBadge: View {
+    var size: CGFloat = 22
+    var body: some View {
+        Image(systemName: "lock.fill").font(.system(size: size * 0.5, weight: .bold)).foregroundColor(.white)
+            .frame(width: size, height: size).background(Color.black, in: Circle())
+            .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+    }
+}
+
+/// Shown when someone taps Claude, ChatGPT or Grok without being a member: what membership is, with the same purchase, restore and legal rules as the Store.
+struct MembersOnlySheet: View {
+    @ObservedObject private var shop = StoreManager.shared
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                HStack(spacing: -14) {
+                    ForEach(["LogoClaude", "LogoChatGPT", "LogoGrok"], id: \.self) { name in
+                        Image(name).resizable().scaledToFill().frame(width: 62, height: 62).clipShape(Circle()).overlay(Circle().stroke(Color.white, lineWidth: 3))
+                    }
+                }
+                .padding(.top, 8)
+                Text("Members only").font(.system(size: 22, weight: .heavy, design: .rounded))
+                Text("Claude, ChatGPT and Grok dots are for members. Subscribe to add them to your team and talk to them.")
+                    .font(.system(size: 14)).foregroundColor(.secondary).multilineTextAlignment(.center)
+                if shop.isMember {
+                    Label("You're a member", systemImage: "checkmark.seal.fill").font(.system(size: 15, weight: .bold)).foregroundColor(.green)
+                    Button("Done") { dismiss() }.font(.system(size: 15, weight: .bold))
+                } else {
+                    if shop.premiumProduct != nil { SubscriptionSummaryView(store: shop) }
+                    if shop.requiresSignIn() {
+                        Text("Sign in with Spacechat first, then subscribe. Purchases belong to your account.").font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.center)
+                    } else {
+                        Button {
+                            Task { if await shop.purchasePremium() { HapticsManager.shared.success(); dismiss() } }
+                        } label: {
+                            Group { if shop.purchaseInFlight { ProgressView().tint(.white) } else { Text(shop.subscribeTitle) } }
+                                .font(.system(size: 16, weight: .bold, design: .rounded)).foregroundColor(.white)
+                                .frame(maxWidth: .infinity).padding(.vertical, 13)
+                                .background(shop.premiumProduct == nil ? Color.black.opacity(0.3) : Color.black, in: Capsule())
+                        }
+                        .disabled(shop.premiumProduct == nil || shop.purchaseInFlight)
+                    }
+                    Text(shop.renewalDisclosure).font(.system(size: 11.5)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if let message = shop.errorMessage { Text(message).font(.system(size: 12)).foregroundColor(.red.opacity(0.8)) }
+                    Button(shop.restoreInFlight ? "Restoring…" : "Restore Purchases") { Task { await shop.restorePurchases() } }
+                        .font(.system(size: 12, weight: .medium)).foregroundColor(.secondary).disabled(shop.restoreInFlight)
+                    SubscriptionLegalLinks()
+                    Button("Not now") { dismiss() }.font(.system(size: 14, weight: .semibold)).foregroundColor(.secondary)
+                }
+            }
+            .padding(24)
+        }
+        .task { await shop.loadProduct(); await shop.refreshEntitlement() }
     }
 }

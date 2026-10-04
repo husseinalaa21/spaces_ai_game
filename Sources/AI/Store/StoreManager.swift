@@ -191,6 +191,9 @@ final class StoreManager: ObservableObject {
         }
     }
 
+    /// Members are people with an active Premium subscription.
+    var isMember: Bool { isSubscribed }
+
     /// Whether the person can use this item: bought on its own, or Premium (which unlocks every look).
     func has(_ id: String) -> Bool { isSubscribed || owned.contains(id) || pointsOwned.contains(id) }
 

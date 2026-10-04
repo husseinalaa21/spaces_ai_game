@@ -21,6 +21,14 @@ struct SpacesAgent: Codable, Identifiable, Equatable {
     var dotKey: String? { Self.spacechatDotKeys[id] }
     /// What the picture is drawn from: the Spacechat dot's key, or the agent's own id.
     var visualKey: String { dotKey ?? id }
+    /// The AI dots wear their logo: a round picture filled with it (the same pictures as in the Spacechat app).
+    static let logos: [String: String] = [
+        "builtin-spaceai": "LogoSpacechatAI", "builtin-ai-claude": "LogoClaude", "builtin-ai-chatgpt": "LogoChatGPT", "builtin-ai-grok": "LogoGrok",
+    ]
+    var logo: String? { Self.logos[id] }
+    /// Claude, ChatGPT and Grok are for members, as in the Spacechat app; Spacechat AI is free.
+    static let memberOnlyIDs: Set<String> = ["builtin-ai-claude", "builtin-ai-chatgpt", "builtin-ai-grok"]
+    var membersOnly: Bool { Self.memberOnlyIDs.contains(id) }
     static let spacechatDotKeys: [String: String] = [
         "builtin-spaceai": "spaceai", "builtin-spacemagic": "spacemagic", "builtin-spacetrading": "spacetrading", "builtin-spaceideas": "spaceideas",
         "builtin-spacedrive": "spacedrive", "builtin-spacemusic": "spacemusic", "builtin-spacephotos": "spacephotos", "builtin-spacevideos": "spacevideos",
@@ -113,6 +121,15 @@ final class AgentsStore: ObservableObject {
                     access: AgentAccess(read: true, write: true, run: false, notes: true))
     }
 
+    /// The AI model dots (members only): each one is drawn as its logo.
+    static let aiModelDots: [SpacesAgent] = [
+        ("builtin-ai-claude", "Claude", "Careful thinking, writing and analysis", "You are the Claude dot. You think carefully, explain your reasoning plainly, write clearly and say when you are unsure.", 0.05),
+        ("builtin-ai-chatgpt", "ChatGPT", "All-round answers, ideas and drafts", "You are the ChatGPT dot. You give direct, well-organised answers, draft quickly and offer practical next steps.", 0.45),
+        ("builtin-ai-grok", "Grok", "Fast, direct answers with a bit of wit", "You are the Grok dot. You answer fast and directly, with a light, witty tone, and you stay accurate.", 0.0),
+    ].map { row in
+        SpacesAgent(id: row.0, name: row.1, role: row.2, instructions: row.3, hue: row.4, builtIn: true, access: AgentAccess(read: true, write: true, run: false, notes: true))
+    }
+
     /// The questions each Spacechat dot suggests (the same ones as in the Spacechat app).
     static let spacechatSuggestions: [String: [String]] = [
         "builtin-spaceai": ["Write a bio for my profile", "Help me plan a small project"],
@@ -123,6 +140,9 @@ final class AgentsStore: ObservableObject {
         "builtin-spacemusic": ["Make me a 4-week practice plan for guitar", "How do I write my first song?"],
         "builtin-spacephotos": ["Teach me composition rules to level up my photos", "How do I get better light without a studio?"],
         "builtin-spacevideos": ["Plan a short video that can grow my audience", "How do I write a strong hook in 3 seconds?"],
+        "builtin-ai-claude": ["Help me think through a hard decision", "Review my writing and make it clearer"],
+        "builtin-ai-chatgpt": ["Draft a short announcement for my project", "Give me 5 ideas to improve this plan"],
+        "builtin-ai-grok": ["Give me a straight answer: is my idea worth building?", "Explain this in two sentences"],
         "builtin-spaceshows": ["Recommend shows that will teach me something new", "Break down what makes a great story"],
     ]
 
@@ -134,7 +154,7 @@ final class AgentsStore: ObservableObject {
     @Published private(set) var tweaks: [String: AgentTweak] = [:]
     @Published private(set) var chats: [String: [AgentMessage]] = [:]
     var all: [SpacesAgent] {
-        let list = (Self.builtIns + Self.spacechatDots).map { builtIn -> SpacesAgent in
+        let list = (Self.builtIns + Self.spacechatDots + Self.aiModelDots).map { builtIn -> SpacesAgent in
             var a = builtIn
             if let changed = builtInAccess[a.id] { a.access = changed }
             if let tweak = tweaks[a.id] {

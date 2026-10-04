@@ -144,6 +144,12 @@ struct GameHubView: View {
             // Set before any product load so a purchase redelivered at launch is credited rather than finished silently.
             store.grantPoints = { points in player.profile.points += points; save() }
         }
+        .task {
+            // Ask Apple what this account owns at launch, so members-only dots and bought looks are right from the start.
+            await store.loadProduct()
+            await store.refreshEntitlement()
+            player.refreshPremium(subscribed: store.isSubscribed)
+        }
         .task(id: authState.spacechatUsername) {
             inbox.configure(username: authState.spacechatUsername)
             if authState.spacechatUsername != nil { await inbox.refresh() }

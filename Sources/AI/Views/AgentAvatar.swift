@@ -58,6 +58,20 @@ struct AgentAvatar: View {
     }
 
     var body: some View {
+        if let logo = SpacesAgent.logos[id] {
+            // an AI dot is always a circle filled with its logo, whatever the dot style is
+            Image(logo).resizable().scaledToFill()
+                .frame(width: size, height: size).clipShape(Circle())
+                .overlay(Circle().stroke(Color.black.opacity(0.12), lineWidth: max(1, size / 40)))
+                .shadow(color: .black.opacity(0.15), radius: size / 14, y: size / 28)
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        } else {
+            dotFace
+        }
+    }
+
+    private var dotFace: some View {
         SpacechatDotFace(key: AgentLookRegistry.keys[id] ?? id, size: size, animated: animated ?? (size >= 40), hue: (AgentLookRegistry.hues[id] ?? hue) * 360, shape: shape)
     }
 }
