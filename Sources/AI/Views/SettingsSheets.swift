@@ -231,7 +231,7 @@ struct AboutSpacechatView: View {
 
                     paragraph("Spacechat is private chat and voice without an email address, a phone number, a wallet, or a social login. An account is a recovery phrase — twelve to eighteen words that you hold and nobody else can reissue.")
 
-                    paragraph("This game uses the same accounts and the same servers. Signing in with your phrase here signs you into your Spacechat account, so Messages and Spacechat AI in the game reach the same people and the same Spacechat AI as the Spacechat app. Each device keeps its own conversation history, so older chats stay in the app where you had them.")
+                    paragraph("This app uses the same accounts and the same servers. Signing in with your phrase here signs you into your Spacechat account, so Messages and Spacechat AI here reach the same people and the same Spacechat AI as the Spacechat app. Each device keeps its own conversation history, so older chats stay in the app where you had them.")
 
                     paragraph("Because the phrase is the account, it is stored in this device's Keychain and marked so it never travels in a backup, and signing out removes it from this device entirely.")
 
@@ -239,7 +239,7 @@ struct AboutSpacechatView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         Link(destination: SpacesLinks.home) {
-                            Label("The Spaces site", systemImage: "globe")
+                            Label("The Space Dots and AI site", systemImage: "globe")
                         }
                         Link(destination: SpacesLinks.spacechat) {
                             Label("spacechat.app", systemImage: "network")

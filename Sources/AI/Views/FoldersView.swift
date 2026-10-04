@@ -40,9 +40,9 @@ struct FoldersView: View {
                     VStack(spacing: 10) {
                         ForEach(folders.folders, id: \.self) { name in
                             Button { opened = name } label: { row(name) }.buttonStyle(.plain)
-                                .contextMenu { Button("Remove from Spaces", systemImage: "trash", role: .destructive) { folders.deleteFolder(name) } }
+                                .contextMenu { Button("Remove from Space Dots and AI", systemImage: "trash", role: .destructive) { folders.deleteFolder(name) } }
                         }
-                        Text("Folders are copied into Spaces. Changes happen to the copies, never to the originals.")
+                        Text("Folders are copied into Space Dots and AI. Changes happen to the copies, never to the originals.")
                             .font(.system(size: 12)).foregroundColor(.black.opacity(0.4)).multilineTextAlignment(.center).padding(.top, 8).padding(.horizontal, 20)
                     }.padding(.horizontal, 16).padding(.bottom, 120)
                 }

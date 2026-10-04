@@ -241,7 +241,7 @@ final class AgentRunner: ObservableObject {
 
     // MARK: Plumbing
 
-    private func system(_ text: String) -> AgentMessage { AgentMessage(kind: .system, from: "Spaces", text: text) }
+    private func system(_ text: String) -> AgentMessage { AgentMessage(kind: .system, from: "Space Dots and AI", text: text) }
 
     private static func explain(_ error: Error) -> String {
         if case SpacechatService.ServiceError.missing = error { return "Agents need the newer Spacechat server. It isn't there yet." }

@@ -1420,8 +1420,8 @@ struct NativeAIVoiceScreen: View {
     }
 
     private var voiceHint: String {
-        if voice.microphoneDenied { return "Microphone access was blocked, so I can’t hear you. Enable it in Settings > Spaces." }
-        if voice.speechDenied { return "Speech recognition is off, so I can’t understand you. Enable it in Settings > Spaces." }
+        if voice.microphoneDenied { return "Microphone access was blocked, so I can’t hear you. Enable it in Settings > Space Dots and AI." }
+        if voice.speechDenied { return "Speech recognition is off, so I can’t understand you. Enable it in Settings > Space Dots and AI." }
         if voice.recognitionUnavailable { return "Speech recognition isn’t available right now. You can still hear replies — type in the chat." }
         return "Say something — I’m listening and will answer out loud."
     }

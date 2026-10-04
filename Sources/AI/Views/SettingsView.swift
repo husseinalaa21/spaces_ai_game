@@ -114,7 +114,7 @@ struct SettingsView: View {
         case .localOnly:
             return "This Spacechat account can't store data on the server, so your progress stays on this device."
         case .ready, .syncing:
-            return "Progress is saved to your Spacechat account when the game closes."
+            return "Progress is saved to your Spacechat account when the app closes."
         case .failed(let message):
             return message
         case .signedOut:

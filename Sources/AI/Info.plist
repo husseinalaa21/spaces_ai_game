@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Spaces - Dots Game</string>
+	<string>Space Dots and AI</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -23,7 +23,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Talk to the Dots agent by voice in Spaces.</string>
+	<string>Talk to the Dots agent by voice in Space Dots and AI.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Understand what you say when you talk to the Dots agent.</string>
 	<key>NSCameraUsageDescription</key>

@@ -170,11 +170,7 @@ struct SettingsPageView: View {
                           isOn: $player.profile.reduceMotion)
             }
 
-            section("PROGRESS") {
-                infoRow(icon: "brain.head.profile", title: "Intelligence level",
-                        subtitle: "\(player.profile.intelligenceLevel)")
-                infoRow(icon: "checkmark.seal", title: "Forms completed",
-                        subtitle: "\(player.profile.completedForms.count)")
+            section("POINTS") {
                 infoRow(icon: "sparkles", title: "Points",
                         subtitle: "\(player.profile.points)")
             }
@@ -185,15 +181,15 @@ struct SettingsPageView: View {
 
     private var aboutSection: some View {
         VStack(spacing: 22) {
-            section("SPACES") {
+            section("SPACE DOTS AND AI") {
                 linkRow(icon: "tag", title: "Pricing",
-                        subtitle: "What everything costs, and what you can earn free",
+                        subtitle: "What everything costs",
                         url: SpacesLinks.pricing)
                 linkRow(icon: "star.circle", title: "Premium",
                         subtitle: "What the subscription includes",
                         url: SpacesLinks.membership)
                 linkRow(icon: "newspaper", title: "Blog",
-                        subtitle: "What's changing in the game",
+                        subtitle: "What's new",
                         url: SpacesLinks.blog)
                 linkRow(icon: "lifepreserver", title: "Support",
                         subtitle: "Help with accounts, purchases and data",
@@ -202,14 +198,14 @@ struct SettingsPageView: View {
 
             section("ABOUT") {
                 tapRow(icon: "info.circle", title: "About Spacechat",
-                       subtitle: "What Spacechat is, and how this game connects to it") {
+                       subtitle: "What Spacechat is, and how this app connects to it") {
                     showAbout = true
                 }
                 linkRow(icon: "hand.raised", title: "Privacy Policy",
                         subtitle: "What's stored, and what never leaves your device",
                         url: SpacesLinks.privacy)
                 linkRow(icon: "doc.text", title: "Terms of Use",
-                        subtitle: "The terms covering Spaces",
+                        subtitle: "The terms covering Space Dots and AI",
                         url: SpacesLinks.terms)
                 linkRow(icon: "doc.plaintext", title: "License Agreement (EULA)",
                         subtitle: "Apple's standard end user license agreement",
@@ -251,7 +247,7 @@ struct SettingsPageView: View {
     private var footer: some View {
         VStack(spacing: 4) {
             SpacechatMark(size: 22)
-            Text("Spaces — Dots Game\(versionLabel)")
+            Text("Space Dots and AI\(versionLabel)")
                 .font(.system(size: 11))
                 .foregroundColor(.black.opacity(0.4))
             Text("Powered by Spacechat")
@@ -344,7 +340,7 @@ struct SettingsPageView: View {
 
     private var accountLabel: String {
         if let username = authState.spacechatUsername { return "@\(username)" }
-        if authState.isGuest { return "Playing as a guest" }
+        if authState.isGuest { return "Signed out" }
         if let name = authState.displayName, !name.isEmpty { return name }
         return authState.isSignedIn ? "Signed in with Apple" : "Not signed in"
     }

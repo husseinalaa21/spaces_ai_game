@@ -138,7 +138,7 @@ final class AgentsStore: ObservableObject {
         "builtin-spaceideas": ["Help me turn my idea into a simple plan", "Give me 5 side-project ideas that can grow"],
         "builtin-spacedrive": ["Help me build a daily routine I can stick to", "I feel unmotivated. How do I get moving?"],
         "builtin-spacemusic": ["Make me a 4-week practice plan for guitar", "How do I write my first song?"],
-        "builtin-spacephotos": ["Teach me composition rules to level up my photos", "How do I get better light without a studio?"],
+        "builtin-spacephotos": ["Teach me composition rules to improve my photos", "How do I get better light without a studio?"],
         "builtin-spacevideos": ["Plan a short video that can grow my audience", "How do I write a strong hook in 3 seconds?"],
         "builtin-ai-claude": ["Help me think through a hard decision", "Review my writing and make it clearer"],
         "builtin-ai-chatgpt": ["Draft a short announcement for my project", "Give me 5 ideas to improve this plan"],

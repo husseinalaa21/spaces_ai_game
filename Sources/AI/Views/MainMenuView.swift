@@ -1037,7 +1037,7 @@ struct PremiumUnlockSheet: View {
             Text(store.premiumTitle)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
 
-            Text("Unlocks every Universe look and every Dot Style — cosmetic only, never a gameplay advantage.")
+            Text("Unlocks every Universe look and every Dot Style — cosmetic only.")
                 .font(.system(size: 14))
                 .foregroundColor(.black.opacity(0.65))
                 .multilineTextAlignment(.center)
@@ -1290,7 +1290,7 @@ private struct SignInRequiredSheet: View {
             Text("Sign in to purchase")
                 .font(.system(size: 20, weight: .bold, design: .rounded))
 
-            Text("Purchases are tied to your Apple Account, so they can be restored if you reinstall or switch devices. Playing stays free without an account.")
+            Text("Purchases are tied to your Apple Account, so they can be restored if you reinstall or switch devices. Looking around stays free without an account.")
                 .font(.system(size: 13))
                 .foregroundColor(.black.opacity(0.6))
                 .multilineTextAlignment(.center)
@@ -1638,7 +1638,7 @@ struct StoreView: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 Text(store.premiumTitle).font(.system(size: 18, weight: .bold, design: .rounded))
-                Text("Unlocks every Universe look and every Dot Style — cosmetic only, never a gameplay advantage.")
+                Text("Unlocks every Universe look and every Dot Style — cosmetic only.")
                     .font(.system(size: 13))
                     .foregroundColor(.black.opacity(0.6))
 
