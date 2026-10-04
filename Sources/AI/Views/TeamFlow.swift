@@ -45,7 +45,8 @@ struct TeamFlowView: View {
 
 // MARK: - Collect your team
 
-/// The wait before the work: dots show up one by one, each saying it is free, and you pick who joins. The picked ones fly into the tray.
+/// The universe of dots: an endless map you drag and zoom, in the look of the workspace. Dots drift about on it, each one free to join. Tap a dot to
+/// collect it: a line joins it to your team in the middle, in the order you pick them (1 leads).
 struct TeamLobbyView: View {
     let agents: [SpacesAgent]
     let palette: WorldBackground.Palette
@@ -54,101 +55,130 @@ struct TeamLobbyView: View {
 
     @State private var shown = 0
     @State private var picked: [String] = []
-    @Namespace private var tray
-    @State private var pulse = false
+    @State private var offset = CGSize.zero
+    @State private var dragBase: CGSize?
+    @State private var scale: CGFloat = 0.62
+    @State private var pinchBase: CGFloat?
+    @State private var touched = false
 
     private var dark: Bool { palette.isDark }
     private var ink: Color { dark ? .white : .black }
     private var chosen: [SpacesAgent] { picked.compactMap { id in agents.first { $0.id == id } } }
     private var searching: Bool { shown < agents.count }
+    private let dotSize: CGFloat = 84
+
+    /// Where each dot sits in the universe: a loose spiral around the team.
+    private func home(_ index: Int) -> CGPoint {
+        let angle = Double(index) * 2.39996 - Double.pi / 2
+        let radius = 195 + 62 * Double(index).squareRoot()
+        return CGPoint(x: cos(angle) * radius, y: sin(angle) * radius * 0.95)
+    }
 
     var body: some View {
-        ZStack {
-            palette.background.ignoresSafeArea()
-            backdrop
-            VStack(spacing: 0) {
-                header
-                ScrollView(showsIndicators: false) {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 22) {
-                        ForEach(Array(agents.enumerated()), id: \.element.id) { index, agent in
-                            if index < shown { tile(agent, index: index).transition(.scale(scale: 0.3).combined(with: .opacity)) }
-                        }
-                    }
-                    .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 24)
-                }
-                trayBar
+        GeometryReader { geo in
+            ZStack {
+                palette.background.ignoresSafeArea()
+                stars(geo.size)
+                world
+                    .scaleEffect(scale)
+                    .offset(x: offset.width, y: offset.height)
+                    .frame(width: geo.size.width, height: geo.size.height)
             }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
+            .contentShape(Rectangle())
+            .simultaneousGesture(drag)
+            .simultaneousGesture(pinch)
+            .overlay(alignment: .top) { header }
+            .overlay(alignment: .bottom) { trayBar }
+            .overlay(alignment: .bottomTrailing) { zoomButtons }
         }
+        .ignoresSafeArea()
         .preferredColorScheme(dark ? .dark : .light)
         .task {
             for i in 0..<agents.count {
-                try? await Task.sleep(nanoseconds: 260_000_000)
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.62)) { shown = i + 1 }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.6)) { shown = i + 1 }
                 HapticsManager.shared.impact(.light)
             }
         }
-        .onAppear { withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { pulse = true } }
     }
 
-    /// Soft drifting rings in the look of the workspace.
-    private var backdrop: some View {
-        GeometryReader { geo in
+    // MARK: world
+
+    private var world: some View {
+        TimelineView(.animation) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
             ZStack {
-                ForEach(0..<3, id: \.self) { i in
-                    Circle().stroke(palette.line.opacity(0.7), lineWidth: 2)
-                        .frame(width: 260 + CGFloat(i) * 150, height: 260 + CGFloat(i) * 150)
-                        .scaleEffect(pulse ? 1.06 : 0.96)
-                        .opacity(searching ? 1 : 0.5)
+                // lines from the team hub to each collected dot
+                Canvas { ctx, size in
+                    let c = CGPoint(x: size.width / 2, y: size.height / 2)
+                    for (order, agent) in chosen.enumerated() {
+                        guard let i = agents.firstIndex(where: { $0.id == agent.id }) else { continue }
+                        let p = drift(home(i), i, t)
+                        var line = Path(); line.move(to: c); line.addLine(to: CGPoint(x: c.x + p.x, y: c.y + p.y))
+                        ctx.stroke(line, with: .color(Color(red: 0.16, green: 0.47, blue: 1).opacity(order == 0 ? 0.9 : 0.55)), style: StrokeStyle(lineWidth: order == 0 ? 3.5 : 2.5, lineCap: .round))
+                    }
+                    for i in 0..<min(shown, agents.count) where !picked.contains(agents[i].id) {
+                        let p = drift(home(i), i, t)
+                        var line = Path(); line.move(to: c); line.addLine(to: CGPoint(x: c.x + p.x, y: c.y + p.y))
+                        ctx.stroke(line, with: .color(ink.opacity(0.06)), style: StrokeStyle(lineWidth: 1.5, dash: [2, 7]))
+                    }
+                }
+                hub
+                ForEach(Array(agents.enumerated()), id: \.element.id) { index, agent in
+                    if index < shown {
+                        let p = drift(home(index), index, t)
+                        dotView(agent).offset(x: p.x, y: p.y).transition(.scale(scale: 0.2).combined(with: .opacity))
+                    }
                 }
             }
-            .position(x: geo.size.width / 2, y: geo.size.height * 0.34)
-        }
-        .allowsHitTesting(false)
-    }
-
-    private var header: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Button(action: onClose) {
-                    Image(systemName: "xmark").font(.system(size: 16, weight: .bold)).foregroundColor(ink)
-                        .frame(width: 40, height: 40).background(ink.opacity(0.08), in: Circle())
-                }.buttonStyle(.plain).accessibilityLabel("Close")
-                Spacer()
-            }
-            .padding(.horizontal, 16).padding(.top, GameHubView.bannerTopInset)
-            Text("Collect your team").font(.system(size: 32, weight: .heavy, design: .rounded)).foregroundColor(ink)
-            HStack(spacing: 8) {
-                if searching { ProgressView().controlSize(.small).tint(ink) }
-                else { Image(systemName: "checkmark.circle.fill").foregroundColor(.green) }
-                Text(searching ? "Looking for dots…" : "\(agents.count) dots available — pick who joins")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundColor(ink.opacity(0.6))
-            }
-            .animation(.easeInOut(duration: 0.25), value: searching)
+            .frame(width: 2000, height: 2000)
         }
     }
 
-    private func tile(_ agent: SpacesAgent, index: Int) -> some View {
+    private func drift(_ p: CGPoint, _ index: Int, _ t: Double) -> CGPoint {
+        let phase = Double(index) * 1.7
+        return CGPoint(x: p.x + sin(t * 0.5 + phase) * 7, y: p.y + cos(t * 0.42 + phase * 1.3) * 9)
+    }
+
+    private var hub: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                Circle().fill(Color(red: 0.16, green: 0.47, blue: 1).opacity(0.14)).frame(width: 118, height: 118)
+                Circle().stroke(Color(red: 0.16, green: 0.47, blue: 1).opacity(0.5), lineWidth: 2).frame(width: 118, height: 118)
+                if chosen.isEmpty {
+                    Image(systemName: "person.3.fill").font(.system(size: 30, weight: .bold)).foregroundColor(ink.opacity(0.4))
+                } else {
+                    HStack(spacing: -14) {
+                        ForEach(chosen.prefix(4)) { a in AgentAvatar(agent: a, size: 38, animated: false).overlay(Circle().stroke(palette.background, lineWidth: 2)) }
+                    }
+                }
+            }
+            Text(chosen.isEmpty ? "Your team" : "\(chosen.count) in your team").font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundColor(ink.opacity(0.7))
+        }
+    }
+
+    private func dotView(_ agent: SpacesAgent) -> some View {
         let order = picked.firstIndex(of: agent.id)
         return Button { toggle(agent) } label: {
             VStack(spacing: 6) {
                 ZStack(alignment: .topTrailing) {
-                    AgentAvatar(agent: agent, size: 78)
+                    AgentAvatar(agent: agent, size: dotSize)
                         .overlay(Circle().stroke(order != nil ? Color(red: 0.16, green: 0.47, blue: 1) : .clear, lineWidth: 4).padding(-6))
-                        .scaleEffect(order != nil ? 1.08 : 1)
+                        .scaleEffect(order != nil ? 1.1 : 1)
                     if let order {
                         Text("\(order + 1)").font(.system(size: 12, weight: .heavy)).foregroundColor(.white)
-                            .frame(width: 24, height: 24).background(Color(red: 0.16, green: 0.47, blue: 1), in: Circle())
-                            .offset(x: 6, y: -6).transition(.scale)
+                            .frame(width: 24, height: 24).background(Color(red: 0.16, green: 0.47, blue: 1), in: Circle()).offset(x: 6, y: -6)
                     }
                 }
                 Text(agent.name).font(.system(size: 14, weight: .heavy, design: .rounded)).foregroundColor(ink)
                 HStack(spacing: 4) {
                     Circle().fill(Color.green).frame(width: 6, height: 6)
-                    Text(order == 0 ? "Lead" : "Available").font(.system(size: 11, weight: .semibold)).foregroundColor(ink.opacity(0.55))
+                    Text(order == 0 ? "Lead" : (order != nil ? "In team" : "Available")).font(.system(size: 11, weight: .semibold)).foregroundColor(ink.opacity(0.55))
                 }
-                Text(agent.role).font(.system(size: 10.5)).foregroundColor(ink.opacity(0.4)).lineLimit(2).multilineTextAlignment(.center)
+                Text(agent.bio.isEmpty ? agent.role : agent.bio).font(.system(size: 10.5)).foregroundColor(ink.opacity(0.4)).lineLimit(2).multilineTextAlignment(.center).frame(width: 130)
             }
-            .frame(maxWidth: .infinity)
         }
         .buttonStyle(PressableButtonStyle())
         .accessibilityLabel("\(agent.name), \(order == nil ? "available" : "in your team")")
@@ -161,24 +191,83 @@ struct TeamLobbyView: View {
         }
     }
 
+    /// The workspace's own dots and stars, drifting a little slower than the map.
+    private func stars(_ size: CGSize) -> some View {
+        Canvas { ctx, s in
+            let step: CGFloat = 44 * max(0.6, min(1.5, scale))
+            let cx = s.width / 2 + offset.width, cy = s.height / 2 + offset.height
+            var x = cx.truncatingRemainder(dividingBy: step) - step
+            while x < s.width + step {
+                var y = cy.truncatingRemainder(dividingBy: step) - step
+                while y < s.height + step {
+                    ctx.fill(Path(ellipseIn: CGRect(x: x - 1.2, y: y - 1.2, width: 2.4, height: 2.4)), with: .color(palette.line.opacity(dark ? 0.55 : 0.8)))
+                    y += step
+                }
+                x += step
+            }
+            if palette.isCosmic {
+                for i in 0..<70 {
+                    let seed = Double(i) * 12.9898
+                    let fx = abs(sin(seed) * 43758.5453).truncatingRemainder(dividingBy: 1), fy = abs(sin(seed * 1.7) * 24634.6345).truncatingRemainder(dividingBy: 1)
+                    let px = ((fx * s.width + offset.width * 0.25).truncatingRemainder(dividingBy: s.width) + s.width).truncatingRemainder(dividingBy: s.width)
+                    let py = ((fy * s.height + offset.height * 0.25).truncatingRemainder(dividingBy: s.height) + s.height).truncatingRemainder(dividingBy: s.height)
+                    let r = 0.8 + abs(sin(seed * 3.1)) * 1.4
+                    ctx.fill(Path(ellipseIn: CGRect(x: px, y: py, width: r, height: r)), with: .color(.white.opacity(0.35 + abs(sin(seed * 5.1)) * 0.5)))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    // MARK: chrome
+
+    private var header: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Button(action: onClose) {
+                    Image(systemName: "xmark").font(.system(size: 16, weight: .bold)).foregroundColor(ink)
+                        .frame(width: 40, height: 40).background(.ultraThinMaterial, in: Circle())
+                }.buttonStyle(.plain).accessibilityLabel("Close")
+                Spacer()
+            }
+            .padding(.horizontal, 16).padding(.top, GameHubView.bannerTopInset)
+            Text("Collect your team").font(.system(size: 28, weight: .heavy, design: .rounded)).foregroundColor(ink)
+            HStack(spacing: 8) {
+                if searching { ProgressView().controlSize(.small).tint(ink) } else { Image(systemName: "checkmark.circle.fill").foregroundColor(.green) }
+                Text(searching ? "Looking for dots in the universe…" : (touched ? "Tap a dot to add it to your team" : "Drag to explore · pinch to zoom · tap a dot to collect it"))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundColor(ink.opacity(0.6))
+            }
+        }
+    }
+
+    private var zoomButtons: some View {
+        VStack(spacing: 8) {
+            ForEach(Array([("plus", 1.3), ("minus", 1 / 1.3)].enumerated()), id: \.offset) { _, step in
+                Button { HapticsManager.shared.impact(.light); withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { scale = min(2.2, max(0.25, scale * CGFloat(step.1))) } } label: {
+                    Image(systemName: step.0).font(.system(size: 15, weight: .bold)).foregroundColor(ink).frame(width: 40, height: 40).background(.ultraThinMaterial, in: Circle())
+                }.buttonStyle(.plain).accessibilityLabel(step.0 == "plus" ? "Zoom in" : "Zoom out")
+            }
+            Button { HapticsManager.shared.impact(.light); withAnimation(.spring(response: 0.5, dampingFraction: 0.84)) { offset = .zero; scale = 0.62 } } label: {
+                Image(systemName: "scope").font(.system(size: 15, weight: .bold)).foregroundColor(ink).frame(width: 40, height: 40).background(.ultraThinMaterial, in: Circle())
+            }.buttonStyle(.plain).accessibilityLabel("Back to the middle")
+        }
+        .padding(.trailing, 14).padding(.bottom, 170 + GameHubView.homeIndicatorInset)
+    }
+
     private var trayBar: some View {
         VStack(spacing: 12) {
             HStack(spacing: -6) {
                 if chosen.isEmpty {
-                    Text("Tap dots to add them. The first one leads the work.")
-                        .font(.system(size: 13, weight: .medium)).foregroundColor(ink.opacity(0.5))
+                    Text("Collect dots on the map. The first one leads the work.").font(.system(size: 13, weight: .medium)).foregroundColor(ink.opacity(0.5))
                 }
                 ForEach(chosen) { agent in
-                    AgentAvatar(agent: agent, size: 40, animated: false)
-                        .overlay(Circle().stroke(palette.background, lineWidth: 2))
-                        .matchedGeometryEffect(id: agent.id, in: tray)
-                        .transition(.scale.combined(with: .opacity))
+                    AgentAvatar(agent: agent, size: 40, animated: false).overlay(Circle().stroke(palette.background, lineWidth: 2)).transition(.scale.combined(with: .opacity))
                 }
                 Spacer(minLength: 0)
             }
             .frame(height: 44)
             Button { onStart(chosen) } label: {
-                Text(chosen.isEmpty ? "Pick at least one dot" : "Start with \(chosen.count) dot\(chosen.count == 1 ? "" : "s")")
+                Text(chosen.isEmpty ? "Collect at least one dot" : "Start with \(chosen.count) dot\(chosen.count == 1 ? "" : "s")")
                     .font(.system(size: 17, weight: .heavy, design: .rounded)).foregroundColor(chosen.isEmpty ? ink.opacity(0.4) : (dark ? .black : .white))
                     .frame(maxWidth: .infinity).frame(height: 54)
                     .background(chosen.isEmpty ? ink.opacity(0.1) : ink, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -187,6 +276,30 @@ struct TeamLobbyView: View {
         }
         .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, GameHubView.homeIndicatorInset + 14)
         .background(.ultraThinMaterial)
+    }
+
+    // MARK: moving about
+
+    private var drag: some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { v in
+                if pinchBase != nil { return }
+                if dragBase == nil { dragBase = offset; touched = true }
+                offset = CGSize(width: (dragBase?.width ?? 0) + v.translation.width, height: (dragBase?.height ?? 0) + v.translation.height)
+            }
+            .onEnded { v in
+                guard dragBase != nil else { return }
+                let base = dragBase ?? offset; dragBase = nil
+                withAnimation(.easeOut(duration: 0.5)) {
+                    offset = CGSize(width: base.width + v.predictedEndTranslation.width * 0.7, height: base.height + v.predictedEndTranslation.height * 0.7)
+                }
+            }
+    }
+
+    private var pinch: some Gesture {
+        MagnificationGesture()
+            .onChanged { v in if pinchBase == nil { pinchBase = scale; touched = true }; scale = min(2.2, max(0.25, (pinchBase ?? scale) * v)) }
+            .onEnded { _ in pinchBase = nil }
     }
 }
 
