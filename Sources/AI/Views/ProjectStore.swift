@@ -11,6 +11,8 @@ struct Project: Codable, Identifiable, Equatable {
     var transcript: [AgentMessage]
     var createdAt = Date()
     var workspaceID: UUID?
+    /// The folder (in Folders) holding this project's files.
+    var folder: String?
 }
 
 @MainActor

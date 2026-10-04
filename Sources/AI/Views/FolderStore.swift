@@ -150,6 +150,17 @@ final class FolderStore: ObservableObject {
         reload()
     }
 
+    /// Makes a folder and returns the name it really got (a number is added when the name is taken); nil when the name is not usable.
+    @discardableResult
+    func makeFolder(_ name: String) -> String? {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
+        guard !clean.isEmpty, !clean.hasPrefix(".") else { return nil }
+        let unique = uniqueName(String(clean.prefix(40)), in: root)
+        guard (try? fm.createDirectory(at: root.appendingPathComponent(unique, isDirectory: true), withIntermediateDirectories: true)) != nil else { return nil }
+        reload()
+        return unique
+    }
+
     func deleteFolder(_ folder: String) {
         guard let url = resolve(folder, "") else { return }
         try? fm.removeItem(at: url)

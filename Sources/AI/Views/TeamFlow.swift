@@ -331,10 +331,16 @@ struct ProjectRoomView: View {
     @State private var summary = ""
     @State private var saved = false
     @State private var projectID = UUID()
+    @State private var folder: String?
+    @State private var filesNote = ""
     @FocusState private var focused: Bool
 
     private var lead: SpacesAgent { team.first ?? agents.all[0] }
-    private func agent(named name: String) -> SpacesAgent? { agents.all.first { $0.name == name } }
+    /// A copy ("Dots copy 2") looks exactly like the dot it was made from.
+    private func agent(named name: String) -> SpacesAgent? {
+        let base = name.range(of: " copy \\d+$", options: .regularExpression).map { String(name[..<$0.lowerBound]) } ?? name
+        return agents.all.first { $0.name == base }
+    }
     /// The runner opens its transcript with the whole task as a message from you; that is the brief you already gave, so it is not shown again.
     private var work: [AgentMessage] { Array(runner.transcript.drop(while: { $0.kind == .user })) }
     private var everything: [AgentMessage] { messages + work }
@@ -344,6 +350,7 @@ struct ProjectRoomView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
+            if !runner.copies.isEmpty { copiesStrip }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 10) {
@@ -372,6 +379,10 @@ struct ProjectRoomView: View {
         .onChange(of: runner.running) { running in
             guard !running, step == .working else { return }
             summary = runner.summary ?? ""
+            // A lead that never closed the task still left its last words: the best summary there is.
+            if summary.isEmpty, let last = work.last(where: { $0.kind == .agent && $0.from == lead.name && $0.text.count > 40 }) { summary = last.text }
+            if summary.isEmpty, let last = work.last(where: { $0.kind == .agent && $0.text.count > 40 }) { summary = last.text }
+            if !summary.isEmpty { writeFiles() }
             withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) { step = .done }
             if !summary.isEmpty { HapticsManager.shared.success() }
         }
@@ -402,6 +413,32 @@ struct ProjectRoomView: View {
         .padding(.horizontal, 14).padding(.top, GameHubView.bannerTopInset - 6).padding(.bottom, 8)
     }
 
+    /// The copies the dots started for small jobs, working beside the team.
+    private var copiesStrip: some View {
+        let working = runner.copies.filter { $0.status == .working }.count
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                Text(working > 0 ? "\(working) cop\(working == 1 ? "y" : "ies") working" : "\(runner.copies.count) cop\(runner.copies.count == 1 ? "y" : "ies") done")
+                    .font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundColor(ink.opacity(0.55))
+                ForEach(runner.copies) { copy in
+                    let parent = agents.all.first { $0.id == copy.parentID }
+                    ZStack(alignment: .bottomTrailing) {
+                        if let parent { AgentAvatar(agent: parent, size: 30, animated: false) }
+                        switch copy.status {
+                        case .working: ProgressView().scaleEffect(0.5).frame(width: 14, height: 14).background(palette.background, in: Circle())
+                        case .done: Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundColor(.green).background(palette.background, in: Circle())
+                        case .failed: Image(systemName: "exclamationmark.circle.fill").font(.system(size: 13)).foregroundColor(.red).background(palette.background, in: Circle())
+                        }
+                    }
+                    .opacity(copy.status == .working ? 0.75 : 1)
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 6)
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: runner.copies)
+        }
+    }
+
     private func typingRow(_ who: String) -> some View {
         HStack(spacing: 8) {
             AgentAvatar(id: agent(named: who)?.id ?? "name-" + who, hue: agent(named: who)?.hue ?? 0.6, size: 30, animated: false)
@@ -427,6 +464,11 @@ struct ProjectRoomView: View {
             if !summary.isEmpty { Text(summary).font(.system(size: 14.5)).foregroundColor(ink).textSelection(.enabled) }
             if authState.spacechatUsername == nil && summary.isEmpty {
                 Button("Log in with Spacechat") { onLogin() }.font(.system(size: 14, weight: .bold))
+            }
+            if let folder {
+                Label("Work saved in the folder “\(folder)”", systemImage: "folder.fill").font(.system(size: 12.5, weight: .semibold)).foregroundColor(ink.opacity(0.6))
+            } else if !filesNote.isEmpty {
+                Text(filesNote).font(.system(size: 12)).foregroundColor(.orange)
             }
             if saved {
                 Label("Saved to your home page", systemImage: "checkmark").font(.system(size: 13, weight: .bold)).foregroundColor(.green)
@@ -493,7 +535,7 @@ struct ProjectRoomView: View {
         guard messages.isEmpty else { return }
         if let project {
             // a saved project: its whole conversation, finished
-            projectID = project.id; name = project.name; idea = project.idea; summary = project.summary; saved = true
+            projectID = project.id; name = project.name; idea = project.idea; summary = project.summary; saved = true; folder = project.folder
             messages = project.transcript; step = .done
             return
         }
@@ -531,7 +573,7 @@ struct ProjectRoomView: View {
     }
 
     private func run(change: String?) async {
-        var task = "Product name: \(name)\nIdea: \(idea)\n\nWork as a team to turn this idea into a clear first plan: who it is for, the main features, a short tagline, and the first steps to build it. Split the work between the teammates by name, check each other's parts, and finish with a short summary for the person."
+        var task = "Product name: \(name)\nIdea: \(idea)\n\nWork as a team to turn this idea into a clear first plan: who it is for, the main features, a short tagline, and the first steps to build it. Split the work between the teammates by name, check each other's parts, and finish with a short summary for the person: when the work is done, close it yourself with done set to true and the summary filled in, and do not ask whether to continue. For small separate jobs (for example several taglines or a list of features to check) you can start copies of yourself, up to 10 at a time."
         if let change {
             archive += work
             task += "\n\nWhat the team came up with so far:\n\(summary)\n\nThe person now asks for this change: \(change)"
@@ -542,10 +584,33 @@ struct ProjectRoomView: View {
         runner.runTeam(task: task, team: team, folder: nil, canEdit: false, store: agents)
     }
 
+    /// The team's work goes into a folder of its own (in Folders): a README with the result, the whole conversation, and one file per copy.
+    private func writeFiles() {
+        let store = FolderStore.shared
+        if folder == nil { folder = store.makeFolder(name.isEmpty ? "Project" : name) }
+        guard let folder else { filesNote = "The work could not be saved to a folder."; return }
+        let members = team.map(\.name).joined(separator: ", ")
+        let all = messages + archive + work
+        var chat = "# \(name)\n\nTeam: \(members)\n\n"
+        for m in all where m.kind == .user || m.kind == .agent {
+            chat += "**\(m.from)**\(m.to.map { " → \($0)" } ?? ""): \(m.text)\n\n"
+        }
+        do {
+            try store.write(folder, "README.md", content: "# \(name)\n\n\(idea)\n\nTeam: \(members)\n\n## Result\n\n\(summary)\n", by: lead.name)
+            try store.write(folder, "conversation.md", content: chat, by: lead.name)
+            for copy in runner.copies {
+                try store.write(folder, "copies/\(copy.parentName.lowercased())-copy-\(copy.number).md", content: "# \(copy.parentName) copy \(copy.number)\n\nJob: \(copy.task)\n\n\(copy.result)\n", by: copy.parentName)
+            }
+            filesNote = ""
+        } catch {
+            filesNote = "Some files could not be saved: \(error.localizedDescription)"
+        }
+    }
+
     private func save() {
         let all = Array((messages + archive + work).suffix(80))
         projects.save(Project(id: projectID, name: name.isEmpty ? "Untitled" : name, idea: idea, teamIDs: team.map(\.id), summary: summary,
-                              transcript: all, workspaceID: workspace.id))
+                              transcript: all, workspaceID: workspace.id, folder: folder))
         HapticsManager.shared.success()
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { saved = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { onClose() }
