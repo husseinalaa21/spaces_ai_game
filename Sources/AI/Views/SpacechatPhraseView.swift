@@ -95,6 +95,8 @@ struct SpacechatPhraseView: View {
                 Text("Space Dots and AI")
                     .font(.system(size: 20, weight: .heavy, design: .rounded))
                     .tracking(0.6)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
             HStack {
                 Button(mode == nil ? "Cancel" : "Back") {
