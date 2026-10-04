@@ -117,6 +117,11 @@ struct FolderDetailView: View {
     @ObservedObject private var workspaces = WorkspaceStore.shared
     private enum Cover: String, Identifiable { case team, space; var id: String { rawValue } }
     @State private var cover: Cover?
+    /// The workspace (look) this folder's space was last in; a new space opens in the current one.
+    private var spaceWorkspace: Workspace {
+        let past = projects.projects.first { $0.linkedFolder == folder }
+        return workspaces.all.first { $0.id == past?.workspaceID } ?? workspaces.current
+    }
     let onClose: () -> Void
 
     @State private var editing: WorkspaceFile?
@@ -200,7 +205,7 @@ struct FolderDetailView: View {
             switch which {
             case .team: TeamRoomView(store: agents, folders: folders, preselected: folder) { cover = nil }
             case .space:
-                TeamFlowView(agents: agents, folders: folders, projects: projects, authState: authState, workspace: workspaces.current, folderName: folder,
+                TeamFlowView(agents: agents, folders: folders, projects: projects, authState: authState, workspace: spaceWorkspace, folderName: folder,
                              onLogin: { cover = nil; onLogin() }, onClose: { cover = nil })
             }
         }

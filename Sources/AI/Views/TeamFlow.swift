@@ -386,6 +386,9 @@ struct ProjectRoomView: View {
         .preferredColorScheme(palette.isDark ? .dark : .light)
         .task { await begin() }
         .onDisappear { if forFolder != nil, !messages.isEmpty { autoSave() } }
+        // a folder's space keeps itself as it goes, so leaving at any moment still reopens exactly here
+        .onChange(of: messages.count) { _ in if forFolder != nil, step != .askIdea { autoSave() } }
+        .onChange(of: runner.transcript.count) { _ in if forFolder != nil { autoSave() } }
         .onChange(of: runner.copies) { jobs in
             // every finished copy leaves its own file in the folder
             guard forFolder == nil, let folder else { return }
@@ -652,7 +655,10 @@ struct ProjectRoomView: View {
         if let project {
             // a saved project: its whole conversation, finished
             projectID = project.id; name = project.name; idea = project.idea; summary = project.summary; saved = true; folder = forFolder ?? project.folder
-            messages = project.transcript; step = .done
+            messages = project.transcript
+            // left before the first task was given: carry on asking for it; otherwise it is where it was left
+            step = project.idea.trimmingCharacters(in: .whitespaces).isEmpty && forFolder != nil ? .askIdea : .done
+            if step == .askIdea { saved = false; focused = true }
             return
         }
         if let forFolder {
