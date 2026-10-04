@@ -35,9 +35,7 @@ struct GameHubView: View {
 
     enum Tab: Int, CaseIterable, Identifiable {
         case home = 0
-        case spacechatAI = 1
         case folders = 2
-        case messages = 3
         case settings = 4
         var id: Int { rawValue }
     }
@@ -85,12 +83,8 @@ struct GameHubView: View {
                                  onOpenProject: { openProject = $0 },
                                  onStore: { showStore = true },
                                  onLogin: { showLogin = true })
-                case .spacechatAI:
-                    SpacechatAIView(authState: authState, player: player, save: save)
                 case .folders:
                     FoldersView(folders: folderStore, agents: agentsStore, authState: authState, onLogin: { showLogin = true })
-                case .messages:
-                    MessagesView(authState: authState, inbox: inbox, agents: agentsStore, folders: folderStore)
                 case .settings:
                     SettingsPageView(player: player, authState: authState,
                                      sync: sync, store: store, save: save,
@@ -179,18 +173,8 @@ struct GameHubView: View {
                 Image(systemName: "house.fill")
                     .font(.system(size: 17, weight: .semibold))
             }
-            tabButton(.spacechatAI, label: "Spacechat AI") {
-                // The circles fill only ~70% of the mark's frame, so it is
-                // drawn larger than the SF Symbols beside it to read at the
-                // same visual weight.
-                SpacechatMark(size: 25, active: tab == .spacechatAI)
-            }
             tabButton(.folders, label: "Folders") {
                 Image(systemName: "folder.fill")
-                    .font(.system(size: 16, weight: .semibold))
-            }
-            tabButton(.messages, label: "Messages") {
-                Image(systemName: "bubble.left.and.bubble.right.fill")
                     .font(.system(size: 16, weight: .semibold))
             }
             tabButton(.settings, label: "Settings") {
