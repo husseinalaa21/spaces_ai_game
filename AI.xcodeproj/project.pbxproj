@@ -549,7 +549,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.6;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.husseinalaa.ai;
 				PRODUCT_NAME = "Space Dots and AI";
 				SDKROOT = iphoneos;
@@ -632,7 +632,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.6;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.husseinalaa.ai;
 				PRODUCT_NAME = "Space Dots and AI";
 				SDKROOT = iphoneos;
