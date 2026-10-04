@@ -23,6 +23,9 @@ struct GameHubView: View {
     @StateObject private var inbox = SpacesInbox()
     @StateObject private var agentsStore = AgentsStore()
     @ObservedObject private var folderStore = FolderStore.shared
+    @ObservedObject private var topicStore = TopicStore.shared
+    /// The old Home (store, rewards, cosmetics), reached from the Store dot on the map.
+    @State private var showStore = false
     @Environment(\.scenePhase) private var scenePhase
     @Namespace private var tabSpace
 
@@ -73,10 +76,10 @@ struct GameHubView: View {
             Group {
                 switch tab {
                 case .home:
-                    MainMenuView(player: player, authState: authState, sync: sync,
-                                 store: store, save: save,
-                                 onLogin: { showLogin = true },
-                                 onPlay: { GameHubView.openTab = .home; onPlay() })
+                    AgentMapView(authState: authState, agents: agentsStore, folders: folderStore, topics: topicStore,
+                                 onPlay: { GameHubView.openTab = .home; onPlay() },
+                                 onStore: { showStore = true },
+                                 onLogin: { showLogin = true })
                 case .spacechatAI:
                     SpacechatAIView(authState: authState, player: player, save: save)
                 case .folders:
@@ -118,6 +121,22 @@ struct GameHubView: View {
                        onSignedIn: { showLogin = false },
                        onClose: { showLogin = false })
                 .preferredColorScheme(.light)
+        }
+        .fullScreenCover(isPresented: $showStore) {
+            ZStack(alignment: .topTrailing) {
+                MainMenuView(player: player, authState: authState, sync: sync,
+                             store: store, save: save,
+                             onLogin: { showStore = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showLogin = true } },
+                             onPlay: { showStore = false; GameHubView.openTab = .home; onPlay() })
+                Button { showStore = false } label: {
+                    Image(systemName: "xmark").font(.system(size: 16, weight: .bold)).foregroundColor(.black)
+                        .frame(width: 40, height: 40).background(Color.black.opacity(0.07), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 16).padding(.top, GameHubView.bannerTopInset)
+                .accessibilityLabel("Close")
+            }
+            .preferredColorScheme(.light)
         }
         .onChange(of: scenePhase) { _ in inbox.persist() }
         .onChange(of: inbox.incomingAlertID) { _ in HapticsManager.shared.impact(.light) }

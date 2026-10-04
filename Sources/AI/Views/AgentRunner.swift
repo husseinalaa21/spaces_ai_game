@@ -134,6 +134,29 @@ final class AgentRunner: ObservableObject {
         }
     }
 
+    // MARK: One dot's part of a topic
+
+    /// One dot does its part of a topic and answers with its result (no chat, no folder). It may take a few turns to look things up
+    /// or note something; the text it said is what is handed on.
+    func handOff(agent: SpacesAgent, message: String, store: AgentsStore) async -> (ok: Bool, text: String) {
+        var outcome = Outcome()
+        var said: [String] = []
+        for step in 1...3 {
+            if Task.isCancelled { break }
+            do {
+                let turn = try await ask(agent: agent, team: [agent], task: message, folder: nil, canEdit: false, outcome: outcome,
+                                         step: step, lead: true, notes: store.notes, transcript: [])
+                if let text = turn.text, !text.isEmpty { said.append(text) }
+                outcome = await carryOut(turn.actions, agent: agent, folder: nil, store: store) { _ in }
+                if outcome.isEmpty || outcome.asked || turn.done { break }
+            } catch {
+                return (false, Self.explain(error))
+            }
+        }
+        let text = said.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? (false, "\(agent.name) had nothing to say. Try running it again.") : (true, text)
+    }
+
     // MARK: Plumbing
 
     private func system(_ text: String) -> AgentMessage { AgentMessage(kind: .system, from: "Spaces", text: text) }
