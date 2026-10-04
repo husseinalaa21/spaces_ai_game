@@ -14,7 +14,6 @@ struct GameHubView: View {
     @ObservedObject var authState: AuthState
     @ObservedObject var sync: SpacechatSync
     var save: () -> Void
-    let onPlay: () -> Void
 
     /// Owned here so the menu's paywall and Settings' subscription rows are
     /// the same StoreManager — two instances would mean two product loads and
@@ -25,6 +24,10 @@ struct GameHubView: View {
     @ObservedObject private var folderStore = FolderStore.shared
     @ObservedObject private var topicStore = TopicStore.shared
     @ObservedObject private var workspaceStore = WorkspaceStore.shared
+    @ObservedObject private var projectStore = ProjectStore.shared
+    /// The team flow (collect a team, brief it, watch it work) and a saved project being reopened.
+    @State private var showTeam = false
+    @State private var openProject: Project?
     /// The old Home (store, rewards, cosmetics), reached from the Store dot on the map.
     @State private var showStore = false
     @Environment(\.scenePhase) private var scenePhase
@@ -77,8 +80,9 @@ struct GameHubView: View {
             Group {
                 switch tab {
                 case .home:
-                    AgentMapView(authState: authState, agents: agentsStore, folders: folderStore, topics: topicStore, workspaces: workspaceStore,
-                                 onPlay: { GameHubView.openTab = .home; onPlay() },
+                    AgentMapView(authState: authState, agents: agentsStore, folders: folderStore, topics: topicStore, workspaces: workspaceStore, projects: projectStore,
+                                 onCollectTeam: { showTeam = true },
+                                 onOpenProject: { openProject = $0 },
                                  onStore: { showStore = true },
                                  onLogin: { showLogin = true })
                 case .spacechatAI:
@@ -128,7 +132,7 @@ struct GameHubView: View {
                 MainMenuView(player: player, authState: authState, sync: sync,
                              store: store, save: save,
                              onLogin: { showStore = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showLogin = true } },
-                             onPlay: { showStore = false; GameHubView.openTab = .home; onPlay() })
+                             onPlay: { showStore = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showTeam = true } })
                 Button { showStore = false } label: {
                     Image(systemName: "xmark").font(.system(size: 16, weight: .bold)).foregroundColor(.black)
                         .frame(width: 40, height: 40).background(Color.black.opacity(0.07), in: Circle())
@@ -138,6 +142,18 @@ struct GameHubView: View {
                 .accessibilityLabel("Close")
             }
             .preferredColorScheme(.light)
+        }
+        .fullScreenCover(isPresented: $showTeam) {
+            TeamFlowView(agents: agentsStore, folders: folderStore, projects: projectStore, authState: authState,
+                         workspace: workspaceStore.current,
+                         onLogin: { showTeam = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showLogin = true } },
+                         onClose: { showTeam = false })
+        }
+        .fullScreenCover(item: $openProject) { saved in
+            TeamFlowView(agents: agentsStore, folders: folderStore, projects: projectStore, authState: authState,
+                         workspace: workspaceStore.current, project: saved,
+                         onLogin: { openProject = nil; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showLogin = true } },
+                         onClose: { openProject = nil })
         }
         .onChange(of: scenePhase) { _ in inbox.persist() }
         .onChange(of: inbox.incomingAlertID) { _ in HapticsManager.shared.impact(.light) }

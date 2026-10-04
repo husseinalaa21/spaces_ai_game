@@ -105,36 +105,6 @@ enum WorldBackground {
         }
     }
 
-    /// The edge of the universe: past it the world is dark, and the last
-    /// stretch inside fades from dark to clear, so the boundary reads as a
-    /// soft gradient wall rather than a hard cut. Drawn in world space.
-    static func drawBoundary(_ context: GraphicsContext, screenSize: CGSize, cameraOffset: CGPoint) {
-        let world = GameEngine.worldSize
-        let band: CGFloat = 260
-        let dark = Color(red: 0.03, green: 0.04, blue: 0.12)
-        let left = -cameraOffset.x, top = -cameraOffset.y
-        let right = world - cameraOffset.x, bottom = world - cameraOffset.y
-        let W = screenSize.width, H = screenSize.height
-        guard left > -band || top > -band || right < W + band || bottom < H + band else { return }
-
-        // Solid dark outside the universe.
-        if left > 0 { context.fill(Path(CGRect(x: 0, y: 0, width: min(W, left), height: H)), with: .color(dark)) }
-        if right < W { context.fill(Path(CGRect(x: max(0, right), y: 0, width: W - max(0, right), height: H)), with: .color(dark)) }
-        if top > 0 { context.fill(Path(CGRect(x: 0, y: 0, width: W, height: min(H, top))), with: .color(dark)) }
-        if bottom < H { context.fill(Path(CGRect(x: 0, y: max(0, bottom), width: W, height: H - max(0, bottom))), with: .color(dark)) }
-
-        // Gradient bands just inside each edge.
-        func gradient(_ rect: CGRect, from: CGPoint, to: CGPoint) {
-            guard rect.width > 0, rect.height > 0 else { return }
-            context.fill(Path(rect), with: .linearGradient(Gradient(colors: [dark.opacity(0.9), dark.opacity(0.45), dark.opacity(0)]),
-                                                           startPoint: from, endPoint: to))
-        }
-        if left > -band { gradient(CGRect(x: left, y: 0, width: band, height: H), from: CGPoint(x: left, y: 0), to: CGPoint(x: left + band, y: 0)) }
-        if right < W + band { gradient(CGRect(x: right - band, y: 0, width: band, height: H), from: CGPoint(x: right, y: 0), to: CGPoint(x: right - band, y: 0)) }
-        if top > -band { gradient(CGRect(x: 0, y: top, width: W, height: band), from: CGPoint(x: 0, y: top), to: CGPoint(x: 0, y: top + band)) }
-        if bottom < H + band { gradient(CGRect(x: 0, y: bottom - band, width: W, height: band), from: CGPoint(x: 0, y: bottom), to: CGPoint(x: 0, y: bottom - band)) }
-    }
-
     static let cellSize: CGFloat = 60
     static let lineWidth: CGFloat = 1.2
 
@@ -168,7 +138,6 @@ enum WorldBackground {
                   cellSize: cellSize / CGFloat(fineDivisions), color: palette.line.opacity(0.18 * breathe), lineWidth: fineLineWidth)
         drawGrid(context, screenSize: screenSize, cameraOffset: cameraOffset,
                   cellSize: cellSize, color: palette.line.opacity(0.5), lineWidth: lineWidth)
-        drawBoundary(context, screenSize: screenSize, cameraOffset: cameraOffset)
 
         // A soft vignette — screen-space, not world-space, so it always
         // frames the viewport itself rather than scrolling with the camera —

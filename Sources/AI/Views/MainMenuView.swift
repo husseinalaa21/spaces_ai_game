@@ -212,7 +212,7 @@ struct MainMenuView: View {
                 .padding(.bottom, 12)
 
                 Button(action: onPlay) {
-                    Text("Play")
+                    Text("Collect team")
                         .font(.system(size: 19, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                         .frame(width: 260, height: 58)

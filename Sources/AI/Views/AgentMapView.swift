@@ -8,7 +8,9 @@ struct AgentMapView: View {
     @ObservedObject var folders: FolderStore
     @ObservedObject var topics: TopicStore
     @ObservedObject var workspaces: WorkspaceStore
-    let onPlay: () -> Void
+    @ObservedObject var projects: ProjectStore
+    let onCollectTeam: () -> Void
+    let onOpenProject: (Project) -> Void
     let onStore: () -> Void
     let onLogin: () -> Void
 
@@ -55,6 +57,7 @@ struct AgentMapView: View {
     private struct Layout {
         var dots: [(agent: SpacesAgent, point: CGPoint)] = []
         var suggestions: [(id: String, agent: SpacesAgent, text: String, point: CGPoint)] = []
+        var projectCards: [(project: Project, center: CGPoint)] = []
         var topicCards: [(topic: Topic, center: CGPoint, nodes: [TopicLayout.Placed])] = []
         var rect = CGRect.zero
     }
@@ -88,8 +91,16 @@ struct AgentMapView: View {
                 out.suggestions.append(("\(agent.id)-\(j)", agent, text, sp)); grow(sp, 95, 40)
             }
         }
-        // topics sit in a row under the ring, each as wide as its tree
-        let top = radius + 380
+        // saved projects sit in a row under the ring, topics under them
+        let saved = projects.projects(in: workspace.id)
+        let cardW: CGFloat = 230, cardGap: CGFloat = 20
+        let rowW = CGFloat(saved.count) * (cardW + cardGap) - cardGap
+        for (i, project) in saved.enumerated() {
+            let c = CGPoint(x: -rowW / 2 + cardW / 2 + CGFloat(i) * (cardW + cardGap), y: radius + 420)
+            out.projectCards.append((project, c)); grow(c, cardW / 2, 80)
+        }
+        // topics sit in a row under them, each as wide as its tree
+        let top = radius + 380 + (saved.isEmpty ? 0 : 230)
         var widths: [CGFloat] = []
         var placed: [[TopicLayout.Placed]] = []
         for topic in visibleTopics {
@@ -222,6 +233,13 @@ struct AgentMapView: View {
             ForEach(scene.suggestions, id: \.id) { item in
                 suggestionBubble(item.agent, item.text).position(wp(item.point))
             }
+            if !scene.projectCards.isEmpty {
+                Text("Projects").font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundColor(ink.opacity(0.4))
+                    .position(wp(CGPoint(x: 0, y: (scene.projectCards.first?.center.y ?? 0) - 62)))
+            }
+            ForEach(scene.projectCards, id: \.project.id) { item in
+                projectCard(item.project).position(wp(item.center))
+            }
             ForEach(scene.topicCards, id: \.topic.id) { card in
                 topicCard(card.topic).position(wp(card.center))
                 ForEach(card.nodes, id: \.id) { n in
@@ -233,7 +251,7 @@ struct AgentMapView: View {
             if visibleTopics.isEmpty {
                 Text("Your topics will grow here")
                     .font(.system(size: 15, weight: .semibold)).foregroundColor(ink.opacity(0.3))
-                    .position(wp(CGPoint(x: 0, y: (scene.dots.map { $0.point.y }.max() ?? 270) + 380)))
+                    .position(wp(CGPoint(x: 0, y: (scene.dots.map { $0.point.y }.max() ?? 270) + 380 + (scene.projectCards.isEmpty ? 0 : 230))))
             }
         }
     }
@@ -271,16 +289,18 @@ struct AgentMapView: View {
     // MARK: - Pieces
 
     private var playDot: some View {
-        Button { HapticsManager.shared.impact(.medium); onPlay() } label: {
+        Button { HapticsManager.shared.impact(.medium); onCollectTeam() } label: {
             ZStack {
                 Circle().fill(LinearGradient(colors: [DotRenderer.defaultColor.opacity(0.8), DotRenderer.defaultColor], startPoint: .topLeading, endPoint: .bottomTrailing))
-                Image(systemName: "play.fill").font(.system(size: 44, weight: .bold)).foregroundColor(.white).offset(x: 3)
+                VStack(spacing: 6) {
+                    Image(systemName: "person.3.fill").font(.system(size: 38, weight: .bold)).foregroundColor(.white)
+                    Text("Collect team").font(.system(size: 14, weight: .heavy, design: .rounded)).foregroundColor(.white)
+                }
             }
             .frame(width: 150, height: 150)
-            .overlay(alignment: .bottom) { Text("Play").font(.system(size: 14, weight: .heavy)).foregroundColor(.white).padding(.bottom, 20) }
         }
         .buttonStyle(PressableButtonStyle())
-        .accessibilityLabel("Play")
+        .accessibilityLabel("Collect team")
     }
 
     private var storeDot: some View {
@@ -336,6 +356,28 @@ struct AgentMapView: View {
         }
         .buttonStyle(PressableButtonStyle())
         .accessibilityLabel("Start a topic: \(text), with \(agent.name)")
+    }
+
+    private func projectCard(_ project: Project) -> some View {
+        Button { HapticsManager.shared.impact(.light); onOpenProject(project) } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: -8) {
+                    ForEach(project.teamIDs.prefix(5), id: \.self) { id in
+                        if let agent = agents.all.first(where: { $0.id == id }) { AgentAvatar(agent: agent, size: 30, animated: false).overlay(Circle().stroke(palette.background, lineWidth: 2)) }
+                    }
+                    Spacer(minLength: 0)
+                }
+                Text(project.name).font(.system(size: 16, weight: .heavy, design: .rounded)).foregroundColor(ink).lineLimit(1)
+                Text(project.idea).font(.system(size: 12)).foregroundColor(ink.opacity(0.55)).lineLimit(3).multilineTextAlignment(.leading)
+            }
+            .padding(14).frame(width: 230, alignment: .leading)
+            .background(surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(ink.opacity(0.15), lineWidth: 1.5))
+            .shadow(color: ink.opacity(0.06), radius: 6, y: 3)
+        }
+        .buttonStyle(PressableButtonStyle())
+        .contextMenu { Button("Delete project", systemImage: "trash", role: .destructive) { projects.delete(project.id) } }
+        .accessibilityLabel("Project \(project.name)")
     }
 
     private func topicCard(_ topic: Topic) -> some View {
