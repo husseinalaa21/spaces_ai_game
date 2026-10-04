@@ -604,7 +604,8 @@ struct ProjectRoomView: View {
             Text("Want changes? Tell the team below.").font(.system(size: 12)).foregroundColor(ink.opacity(0.4))
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(14)
-        .background(ZStack { palette.background; Color(red: 0.2, green: 0.7, blue: 0.4).opacity(0.14) }, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Color(red: 0.2, green: 0.7, blue: 0.4).opacity(0.14), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(palette.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(ink.opacity(0.1)))
         .transition(.scale(scale: 0.92).combined(with: .opacity))
     }
