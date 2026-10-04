@@ -26,13 +26,14 @@ struct FileChange: Codable, Identifiable, Equatable {
 }
 
 enum FolderError: LocalizedError {
-    case unsafePath, tooLarge, notText, missing
+    case unsafePath, tooLarge, notText, missing, exists
     var errorDescription: String? {
         switch self {
         case .unsafePath: return "That path is outside the folder."
         case .tooLarge: return "That file is too large."
         case .notText: return "That file isn't text, so it can't be edited here."
         case .missing: return "That file or folder doesn't exist."
+        case .exists: return "Something with that name is already there."
         }
     }
 }
@@ -166,6 +167,51 @@ final class FolderStore: ObservableObject {
         try? fm.removeItem(at: url)
         changes.removeAll { $0.folder == folder }
         saveChanges(); reload()
+    }
+
+    // MARK: Organising (by the person)
+
+    /// A new empty folder inside a project folder (`path` is "" for the top).
+    func makeDirectory(_ folder: String, in parent: String, named name: String) throws {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
+        guard !clean.isEmpty, !clean.hasPrefix(".") else { throw FolderError.unsafePath }
+        guard let base = resolve(folder, parent) else { throw FolderError.unsafePath }
+        try fm.createDirectory(at: base.appendingPathComponent(uniqueName(clean, in: base), isDirectory: true), withIntermediateDirectories: true)
+    }
+
+    /// Renames a file or folder (same place, new name). Returns the new path.
+    @discardableResult
+    func rename(_ folder: String, _ path: String, to name: String) throws -> String {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
+        guard !clean.isEmpty, !clean.hasPrefix("."), let from = resolve(folder, path) else { throw FolderError.unsafePath }
+        guard fm.fileExists(atPath: from.path) else { throw FolderError.missing }
+        let parent = (path as NSString).deletingLastPathComponent
+        let to = from.deletingLastPathComponent().appendingPathComponent(clean)
+        guard !fm.fileExists(atPath: to.path) else { throw FolderError.exists }
+        try fm.moveItem(at: from, to: to)
+        return parent.isEmpty ? clean : parent + "/" + clean
+    }
+
+    /// Moves a file or folder into another folder of the same project (`parent` is "" for the top). Returns the new path.
+    @discardableResult
+    func move(_ folder: String, _ path: String, into parent: String) throws -> String {
+        guard let from = resolve(folder, path), let dir = resolve(folder, parent) else { throw FolderError.unsafePath }
+        guard fm.fileExists(atPath: from.path) else { throw FolderError.missing }
+        // a folder cannot go inside itself
+        if parent == path || parent.hasPrefix(path + "/") { throw FolderError.unsafePath }
+        let name = from.lastPathComponent
+        let to = dir.appendingPathComponent(name)
+        guard !fm.fileExists(atPath: to.path) else { throw FolderError.exists }
+        try fm.moveItem(at: from, to: to)
+        return parent.isEmpty ? name : parent + "/" + name
+    }
+
+    /// Deletes a file (a text file can be undone from Changes) or a whole folder inside the project.
+    func deleteItem(_ folder: String, _ item: WorkspaceFile, by: String) throws {
+        guard !item.path.isEmpty, let url = resolve(folder, item.path) else { throw FolderError.unsafePath }
+        if item.isDirectory { try fm.removeItem(at: url); return }
+        if (try? delete(folder, item.path, by: by)) != nil { return }
+        try fm.removeItem(at: url)
     }
 
     // MARK: Looking

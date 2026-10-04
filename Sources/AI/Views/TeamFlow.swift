@@ -379,6 +379,7 @@ struct ProjectRoomView: View {
                 if step == .done { doneCard.padding(.horizontal, 14).padding(.bottom, 8) }
                 composer
             }
+            if filesOpen, let folder { ProjectFilesPanel(folder: folder, palette: palette, who: lead.name) { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { filesOpen = false } }.transition(.scale(scale: 0.9, anchor: .topLeading).combined(with: .opacity)).zIndex(5) }
             if messagesOpen { messagesPanel.transition(.scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)).zIndex(5) }
         }
         .background(palette.background.ignoresSafeArea())
@@ -417,31 +418,21 @@ struct ProjectRoomView: View {
 
     private var cardFill: Color { palette.isDark ? Color.white.opacity(0.12) : Color.white.opacity(0.92) }
 
-    /// Top left: the project's files (its folder), live. Tap to see every file.
+    /// Under the title, on the left: a round Files button. It opens the project's folder to browse, move, rename, edit and delete.
     private var filesCard: some View {
-        let list: [WorkspaceFile] = folder.map { FolderStore.shared.files($0) } ?? []
-        return Button { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { filesOpen.toggle() } } label: {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
-                    Image(systemName: "folder.fill").font(.system(size: 12, weight: .bold))
-                    Text("Files").font(.system(size: 13, weight: .heavy, design: .rounded))
-                    Spacer(minLength: 0)
-                    Text("\(list.count)").font(.system(size: 11, weight: .bold)).opacity(0.5)
-                }
-                if list.isEmpty {
-                    Text(step == .done ? "No files" : "Saved here when the work is done").font(.system(size: 10.5)).opacity(0.55).multilineTextAlignment(.leading)
-                } else {
-                    ForEach(Array(list.prefix(filesOpen ? 30 : 3)), id: \.path) { file in
-                        Label(file.path, systemImage: "doc.text").font(.system(size: 10.5, weight: .medium)).lineLimit(1).labelStyle(.titleAndIcon)
+        let count = folder.map { FolderStore.shared.files($0).count } ?? 0
+        return Button { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { filesOpen = true } } label: {
+            Image(systemName: "folder.fill").font(.system(size: 19, weight: .bold)).foregroundColor(ink)
+                .frame(width: 48, height: 48)
+                .background(cardFill, in: Circle())
+                .overlay(Circle().stroke(ink.opacity(0.12)))
+                .overlay(alignment: .topTrailing) {
+                    if count > 0 {
+                        Text("\(count)").font(.system(size: 10, weight: .heavy)).foregroundColor(.white)
+                            .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18).background(Color(red: 0.16, green: 0.47, blue: 1), in: Capsule()).offset(x: 4, y: -4)
                     }
-                    if !filesOpen, list.count > 3 { Text("+\(list.count - 3) more").font(.system(size: 10)).opacity(0.5) }
                 }
-            }
-            .foregroundColor(ink)
-            .padding(10).frame(width: filesOpen ? 220 : 150, alignment: .leading)
-            .background(cardFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(ink.opacity(0.12)))
-        }.buttonStyle(.plain).accessibilityLabel("Files")
+        }.buttonStyle(.plain).accessibilityLabel("Files, \(count)")
     }
 
     /// Top right: the conversation, newest three lines. Tap to open all of it.
@@ -504,24 +495,24 @@ struct ProjectRoomView: View {
     private var topBar: some View {
         HStack(spacing: 10) {
             Button { runner.stop(); onClose() } label: {
-                Image(systemName: "xmark").font(.system(size: 16, weight: .bold)).foregroundColor(ink)
-                    .frame(width: 40, height: 40).background(ink.opacity(0.08), in: Circle())
+                Image(systemName: "xmark").font(.system(size: 15, weight: .bold)).foregroundColor(ink)
+                    .frame(width: 36, height: 36).background(ink.opacity(0.08), in: Circle())
             }.buttonStyle(.plain).accessibilityLabel("Close")
             VStack(alignment: .leading, spacing: 1) {
-                Text(name.isEmpty ? "New project" : name).font(.system(size: 18, weight: .heavy, design: .rounded)).foregroundColor(ink).lineLimit(1)
-                Text(runner.running ? "Working…" : (step == .done ? "Finished" : "Your team")).font(.system(size: 11.5, weight: .semibold)).foregroundColor(ink.opacity(0.5))
+                Text(name.isEmpty ? "New project" : name).font(.system(size: 16, weight: .heavy, design: .rounded)).foregroundColor(ink).lineLimit(1)
+                Text(runner.running ? "Working…" : (step == .done ? "Finished" : "Your team")).font(.system(size: 11, weight: .semibold)).foregroundColor(ink.opacity(0.5))
             }
-            Spacer()
+            Spacer(minLength: 8)
             HStack(spacing: -8) {
                 ForEach(team) { member in
-                    AgentAvatar(agent: member, size: 34, animated: false)
+                    AgentAvatar(agent: member, size: 30, animated: false)
                         .overlay(Circle().stroke(palette.background, lineWidth: 2))
                         .scaleEffect(runner.speaking == member.name || typing == member.name ? 1.2 : 1)
                         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: runner.speaking)
                 }
             }
         }
-        .padding(.horizontal, 14).padding(.top, GameHubView.bannerTopInset - 6).padding(.bottom, 8)
+        .padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 4)
     }
 
     /// The copies the dots started for small jobs, working beside the team.
@@ -928,5 +919,134 @@ struct ProjectUniverse: View {
             }
             Text(job.name).font(.system(size: 10.5, weight: .heavy, design: .rounded)).foregroundColor(ink.opacity(0.75))
         }
+    }
+}
+
+// MARK: - The project's files
+
+/// A pop-up with the project's folder: every file and folder in it. Tap one to open its menu: edit, rename, move or delete (a folder can also get a new folder inside).
+struct ProjectFilesPanel: View {
+    let folder: String
+    let palette: WorldBackground.Palette
+    let who: String
+    let onClose: () -> Void
+
+    @ObservedObject private var store = FolderStore.shared
+    @State private var editing: WorkspaceFile?
+    @State private var renaming: WorkspaceFile?
+    @State private var renameText = ""
+    @State private var moving: WorkspaceFile?
+    @State private var deleting: WorkspaceFile?
+    @State private var makingIn: String?
+    @State private var newName = ""
+    @State private var problem: String?
+
+    private var ink: Color { palette.isDark ? .white : .black }
+
+    var body: some View {
+        let tree = store.tree(folder)
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill").font(.system(size: 14, weight: .bold)).foregroundColor(ink)
+                Text(folder).font(.system(size: 16, weight: .heavy, design: .rounded)).foregroundColor(ink).lineLimit(1)
+                Spacer()
+                Button { makingIn = ""; newName = "" } label: {
+                    Image(systemName: "folder.badge.plus").font(.system(size: 13, weight: .bold)).foregroundColor(ink).frame(width: 30, height: 30).background(ink.opacity(0.08), in: Circle())
+                }.buttonStyle(.plain).accessibilityLabel("New folder")
+                Button(action: onClose) {
+                    Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundColor(ink).frame(width: 30, height: 30).background(ink.opacity(0.08), in: Circle())
+                }.buttonStyle(.plain).accessibilityLabel("Close files")
+            }.padding(.horizontal, 14).padding(.vertical, 10)
+            if let problem { Text(problem).font(.system(size: 12, weight: .semibold)).foregroundColor(.red).padding(.horizontal, 14).padding(.bottom, 6) }
+            if tree.isEmpty {
+                VStack(spacing: 6) {
+                    Text("This folder is empty").font(.system(size: 14, weight: .bold)).foregroundColor(ink)
+                    Text("The team's files show up here as they are made.").font(.system(size: 12)).foregroundColor(ink.opacity(0.55)).multilineTextAlignment(.center)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(20)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(tree) { item in row(item) }
+                    }.padding(.horizontal, 8).padding(.bottom, 10)
+                }
+            }
+        }
+        .frame(width: 330, height: 480)
+        .background(palette.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(ink.opacity(0.15)))
+        .shadow(color: .black.opacity(0.15), radius: 14, y: 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.top, GameHubView.bannerTopInset + 56).padding(.leading, 12)
+        .sheet(item: $editing) { file in FileEditorView(folder: folder, file: file, folders: store) { editing = nil } }
+        .sheet(item: $moving) { item in MoveSheet(folder: folder, item: item) { destination in
+            moving = nil
+            guard let destination else { return }
+            do { try store.move(folder, item.path, into: destination); problem = nil } catch { problem = error.localizedDescription }
+        } }
+        .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $renameText)
+            Button("Save") {
+                if let item = renaming { do { try store.rename(folder, item.path, to: renameText); problem = nil } catch { problem = error.localizedDescription } }
+                renaming = nil
+            }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        }
+        .alert("New folder", isPresented: Binding(get: { makingIn != nil }, set: { if !$0 { makingIn = nil } })) {
+            TextField("Name", text: $newName)
+            Button("Create") {
+                if let parent = makingIn { do { try store.makeDirectory(folder, in: parent, named: newName); problem = nil } catch { problem = error.localizedDescription } }
+                makingIn = nil
+            }
+            Button("Cancel", role: .cancel) { makingIn = nil }
+        }
+        .confirmationDialog("Delete “\(deleting?.name ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                if let item = deleting { do { try store.deleteItem(folder, item, by: "You"); problem = nil } catch { problem = error.localizedDescription } }
+                deleting = nil
+            }
+            Button("Cancel", role: .cancel) { deleting = nil }
+        } message: { Text(deleting?.isDirectory == true ? "The folder and everything in it will be removed." : "A text file can be brought back from Changes.") }
+    }
+
+    private func row(_ item: WorkspaceFile) -> some View {
+        Menu {
+            if !item.isDirectory { Button { editing = item } label: { Label("Edit", systemImage: "pencil") } }
+            if item.isDirectory { Button { makingIn = item.path; newName = "" } label: { Label("New folder inside", systemImage: "folder.badge.plus") } }
+            Button { renameText = item.name; renaming = item } label: { Label("Rename", systemImage: "character.cursor.ibeam") }
+            Button { moving = item } label: { Label("Move to…", systemImage: "arrow.right.circle") }
+            Button(role: .destructive) { deleting = item } label: { Label("Delete", systemImage: "trash") }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: item.isDirectory ? "folder.fill" : "doc.text").font(.system(size: 15)).foregroundColor(item.isDirectory ? Color(red: 0.16, green: 0.47, blue: 1) : ink.opacity(0.6)).frame(width: 22)
+                Text(item.name).font(.system(size: 14, weight: item.isDirectory ? .bold : .medium)).foregroundColor(ink).lineLimit(1)
+                Spacer()
+                if !item.isDirectory { Text(item.size < 1024 ? "\(item.size) B" : "\(item.size / 1024) KB").font(.system(size: 10.5, weight: .semibold)).foregroundColor(ink.opacity(0.4)) }
+                Image(systemName: "ellipsis").font(.system(size: 12, weight: .bold)).foregroundColor(ink.opacity(0.35))
+            }
+            .padding(.leading, CGFloat(item.depth) * 16 + 6).padding(.trailing, 6).padding(.vertical, 9)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Pick where to move a file or folder: the top of the project or any folder in it.
+private struct MoveSheet: View {
+    let folder: String
+    let item: WorkspaceFile
+    let onPick: (String?) -> Void
+    @ObservedObject private var store = FolderStore.shared
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Button { onPick("") } label: { Label("\(folder) (top)", systemImage: "folder.fill") }
+                ForEach(store.tree(folder).filter { $0.isDirectory && $0.path != item.path && !$0.path.hasPrefix(item.path + "/") }) { dir in
+                    Button { onPick(dir.path) } label: { Label(dir.path, systemImage: "folder") }
+                }
+            }
+            .navigationTitle("Move “\(item.name)”").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { onPick(nil) } } }
+        }.preferredColorScheme(.light)
     }
 }
