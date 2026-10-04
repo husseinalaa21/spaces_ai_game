@@ -282,9 +282,12 @@ final class PlayerState: ObservableObject {
     /// show the real number rather than the number they asked for.
     ///
     /// Points bought with money bypass this entirely.
+    static let earnsPoints = false
+
     @discardableResult
     func awardPoints(_ amount: Int) -> Int {
-        guard amount > 0 else { return 0 }
+        // Points are no longer earned by using the app: they only come from Point Packs, so every earning path (rewards, rounds, forms) ends here.
+        guard Self.earnsPoints, amount > 0 else { return 0 }
         rollOverEarnedDayIfNeeded()
         let granted = min(amount, max(0, PlayerState.dailyEarnCap - profile.pointsEarnedToday))
         guard granted > 0 else { return 0 }

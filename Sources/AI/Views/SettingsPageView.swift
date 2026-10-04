@@ -176,7 +176,7 @@ struct SettingsPageView: View {
                 infoRow(icon: "checkmark.seal", title: "Forms completed",
                         subtitle: "\(player.profile.completedForms.count)")
                 infoRow(icon: "sparkles", title: "Points",
-                        subtitle: "\(player.profile.points) · \(player.pointsRemainingToday) still earnable today")
+                        subtitle: "\(player.profile.points)")
             }
         }
     }
