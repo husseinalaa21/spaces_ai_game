@@ -47,7 +47,7 @@ struct AgentsView: View {
         .background(Color.white)
         .preferredColorScheme(.light)
         .sheet(isPresented: $showSignIn) { SpacechatPhraseView(authState: authState) { showSignIn = false } }
-        .sheet(isPresented: $showCreate) { AgentCreateView(store: store) { showCreate = false } }
+        .sheet(isPresented: $showCreate) { DotEditorView(store: store, agent: nil) { showCreate = false } }
         .sheet(isPresented: $showAccess) { AccessView(store: store) { showAccess = false } }
         .fullScreenCover(item: $chatting) { agent in AgentChatView(agent: agent, store: store, folders: folders) { chatting = nil } }
         .fullScreenCover(isPresented: $showTeam) { TeamRoomView(store: store, folders: folders, preselected: nil) { showTeam = false } }
@@ -130,65 +130,6 @@ struct AgentsView: View {
 }
 
 // MARK: - Make an agent
-
-struct AgentCreateView: View {
-    @ObservedObject var store: AgentsStore
-    let onDone: () -> Void
-    @State private var name = ""
-    @State private var role = ""
-    @State private var instructions = ""
-    @State private var hue = 0.5
-    @State private var newID = "agent-" + UUID().uuidString
-    @State private var access = AgentAccess()
-
-    private let presets: [(String, String, String)] = [
-        ("Researcher", "Finds and explains things", "You look things up in the files you are given, explain them simply and say when you are unsure."),
-        ("Designer", "Plans how things look", "You suggest clear, simple layouts, colours and wording, and edit design files when asked."),
-        ("Tester", "Tries things and reports problems", "You check work carefully, list what is wrong and what to fix first."),
-        ("Planner", "Turns ideas into steps", "You turn goals into short ordered steps and hand each step to the right teammate.")
-    ]
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Name") { TextField("Name, like Ava", text: $name).textInputAutocapitalization(.words) }
-                Section("What it does") {
-                    TextField("A short job, like \"checks my spelling\"", text: $role)
-                    TextField("How it should behave (optional)", text: $instructions, axis: .vertical).lineLimit(2...5)
-                }
-                Section("Start from") {
-                    ForEach(presets, id: \.0) { preset in
-                        Button { name = preset.0; role = preset.1; instructions = preset.2 } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(preset.0).font(.subheadline.weight(.semibold)).foregroundColor(.black)
-                                Text(preset.1).font(.caption).foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-                Section("What it may do") {
-                    AccessToggles(access: $access)
-                }
-                Section("Look — shape and face are unique to this agent") {
-                    HStack {
-                        AgentAvatar(id: newID, hue: hue, size: 44)
-                        Slider(value: $hue, in: 0...1)
-                    }
-                }
-            }
-            .navigationTitle("New agent").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onDone) }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        _ = store.add(id: newID, name: name, role: role.isEmpty ? "Helps with tasks" : role, instructions: instructions, hue: hue, access: access)
-                        onDone()
-                    }.disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-        }.tint(.black).preferredColorScheme(.light)
-    }
-}
 
 // MARK: - Folder choice menu
 

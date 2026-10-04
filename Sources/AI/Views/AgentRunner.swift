@@ -293,7 +293,7 @@ final class AgentRunner: ObservableObject {
                      step: Int, lead: Bool, notes: [String], transcript override: [AgentMessage]? = nil) async throws -> Turn {
         var body: [String: Any] = [
             "mode": "agent",
-            "agent": ["name": agent.name, "role": agent.role, "instructions": agent.instructions, "access": agent.access.payload],
+            "agent": ["name": agent.name, "role": agent.role, "instructions": agent.prompt, "access": agent.access.payload],
             "team": team.map { ["name": $0.name, "role": $0.role] },
             "task": task,
             "transcript": (override ?? transcript).suffix(12).map { m -> [String: Any] in

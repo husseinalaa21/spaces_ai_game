@@ -45,8 +45,9 @@ struct AgentAvatar: View {
         self.init(id: match?.id ?? "name-" + name, hue: match?.hue ?? 0.6, size: size)
     }
 
-    /// The built-in agents keep their own shape; any other agent's is worked out from its id, the same way the Spacechat app does it.
+    /// The shape the person picked; otherwise the built-in agents keep their own shape and any other agent's is worked out from its id, the same way the Spacechat app does it.
     private var shape: String? {
+        if let picked = AgentLookRegistry.shapes[id] { return picked }
         switch id {
         case "builtin-dots": return "circle"
         case "builtin-coder": return "hexagon"
@@ -57,6 +58,6 @@ struct AgentAvatar: View {
     }
 
     var body: some View {
-        SpacechatDotFace(key: id, size: size, animated: animated ?? (size >= 40), hue: hue * 360, shape: shape)
+        SpacechatDotFace(key: id, size: size, animated: animated ?? (size >= 40), hue: (AgentLookRegistry.hues[id] ?? hue) * 360, shape: shape)
     }
 }

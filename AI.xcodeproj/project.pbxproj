@@ -12,6 +12,7 @@
 		E5F621CAED4EDAA8E3D07EB2 /* FoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F621CAED4EDAA8E3D07EA1 /* FoldersView.swift */; };
 		A1B2C3D4E5F60718293A4B02 /* AgentMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B12 /* AgentMapView.swift */; };
 		A1B2C3D4E5F60718293A4B01 /* TopicStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B11 /* TopicStore.swift */; };
+		A1B2C3D4E5F60718293A4B07 /* DotEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B17 /* DotEditor.swift */; };
 		A1B2C3D4E5F60718293A4B06 /* TeamFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B16 /* TeamFlow.swift */; };
 		A1B2C3D4E5F60718293A4B05 /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B15 /* ProjectStore.swift */; };
 		A1B2C3D4E5F60718293A4B04 /* SpacechatDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B14 /* SpacechatDot.swift */; };
@@ -77,6 +78,7 @@
 		E5F621CAED4EDAA8E3D07EA1 /* FoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldersView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B12 /* AgentMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMapView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B11 /* TopicStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicStore.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B17 /* DotEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DotEditor.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B16 /* TeamFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamFlow.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B15 /* ProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStore.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B14 /* SpacechatDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacechatDot.swift; sourceTree = "<group>"; };
@@ -221,6 +223,7 @@
 				E5F621CAED4EDAA8E3D07EA1 /* FoldersView.swift */,
 				A1B2C3D4E5F60718293A4B12 /* AgentMapView.swift */,
 				A1B2C3D4E5F60718293A4B11 /* TopicStore.swift */,
+				A1B2C3D4E5F60718293A4B17 /* DotEditor.swift */,
 				A1B2C3D4E5F60718293A4B16 /* TeamFlow.swift */,
 				A1B2C3D4E5F60718293A4B15 /* ProjectStore.swift */,
 				A1B2C3D4E5F60718293A4B14 /* SpacechatDot.swift */,
@@ -423,6 +426,7 @@
 				E5F621CAED4EDAA8E3D07EB2 /* FoldersView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B02 /* AgentMapView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B01 /* TopicStore.swift in Sources */,
+				A1B2C3D4E5F60718293A4B07 /* DotEditor.swift in Sources */,
 				A1B2C3D4E5F60718293A4B06 /* TeamFlow.swift in Sources */,
 				A1B2C3D4E5F60718293A4B05 /* ProjectStore.swift in Sources */,
 				A1B2C3D4E5F60718293A4B04 /* SpacechatDot.swift in Sources */,

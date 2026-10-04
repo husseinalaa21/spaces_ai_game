@@ -25,6 +25,8 @@ struct AgentMapView: View {
     @State private var openNode: NodeRef?
     @State private var renaming: Topic?
     @State private var editingSpace: Workspace?
+    @State private var editingDot: SpacesAgent?
+    @State private var creatingDot = false
     @State private var creatingSpace = false
     @State private var renameText = ""
 
@@ -162,6 +164,8 @@ struct AgentMapView: View {
             NodeSheet(ref: ref, agents: agents, topics: topics, runner: runner) { openNode = nil }
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $creatingDot) { DotEditorView(store: agents, agent: nil) { creatingDot = false } }
+        .sheet(item: $editingDot) { dot in DotEditorView(store: agents, agent: dot) { editingDot = nil } }
         .sheet(isPresented: $creatingSpace) {
             WorkspaceSheet(agents: agents.all, space: nil) { name, theme, team in
                 creatingSpace = false
@@ -226,6 +230,7 @@ struct AgentMapView: View {
             playDot.position(wp(.zero))
             storeDot.position(wp(CGPoint(x: -150, y: 150)))
             newTopicDot.position(wp(CGPoint(x: 150, y: 150)))
+            newDotDot.position(wp(CGPoint(x: -150, y: -150)))
 
             ForEach(scene.dots, id: \.agent.id) { item in
                 agentDot(item.agent).position(wp(item.point))
@@ -307,6 +312,10 @@ struct AgentMapView: View {
         smallDot(symbol: "bag.fill", label: "Store", fill: [Color(red: 0.99, green: 0.84, blue: 0.4), Color(red: 0.92, green: 0.62, blue: 0.1)], action: onStore)
     }
 
+    private var newDotDot: some View {
+        smallDot(symbol: "paintpalette.fill", label: "New dot", fill: [Color(red: 0.74, green: 0.45, blue: 0.98), Color(red: 0.36, green: 0.58, blue: 1.0)]) { creatingDot = true }
+    }
+
     private var newTopicDot: some View {
         smallDot(symbol: "plus", label: "New topic", fill: [Color(white: 0.28), .black]) { showNew = true }
     }
@@ -329,12 +338,17 @@ struct AgentMapView: View {
             VStack(spacing: 6) {
                 AgentAvatar(agent: agent, size: Self.dotSize)
                 Text(agent.name).font(.system(size: 15, weight: .heavy)).foregroundColor(ink)
-                Text(agent.role).font(.system(size: 11, weight: .medium)).foregroundColor(ink.opacity(0.45))
+                Text(agent.bio.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? agent.role : agent.bio).font(.system(size: 11, weight: .medium)).foregroundColor(ink.opacity(0.45))
                     .lineLimit(2).multilineTextAlignment(.center).frame(width: 150)
             }
         }
         .buttonStyle(PressableButtonStyle())
+        .contextMenu {
+            Button("Customize", systemImage: "paintpalette") { editingDot = agent }
+            Button("Chat", systemImage: "bubble.left") { chatting = agent }
+        }
         .accessibilityLabel("Chat with \(agent.name)")
+        .accessibilityAction(named: "Customize") { editingDot = agent }
     }
 
     private func suggestionBubble(_ agent: SpacesAgent, _ text: String) -> some View {
@@ -469,7 +483,7 @@ struct AgentMapView: View {
                         .overlay(Capsule().stroke(ink.opacity(0.08)))
                 }.buttonStyle(.plain)
             } else {
-                Text("Drag to explore · pinch to zoom")
+                Text("Drag to explore · pinch to zoom · hold a dot to customize it")
                     .font(.system(size: 12, weight: .medium)).foregroundColor(ink.opacity(0.4))
                     .opacity(touched ? 0 : 1).animation(.easeOut(duration: 0.4), value: touched)
             }
