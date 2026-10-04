@@ -12,6 +12,7 @@
 		E5F621CAED4EDAA8E3D07EB2 /* FoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F621CAED4EDAA8E3D07EA1 /* FoldersView.swift */; };
 		A1B2C3D4E5F60718293A4B02 /* AgentMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B12 /* AgentMapView.swift */; };
 		A1B2C3D4E5F60718293A4B01 /* TopicStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B11 /* TopicStore.swift */; };
+		A1B2C3D4E5F60718293A4B04 /* SpacechatDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B14 /* SpacechatDot.swift */; };
 		A1B2C3D4E5F60718293A4B03 /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B13 /* WorkspaceStore.swift */; };
 		E5BA7EB5D697289A778CD9B2 /* AgentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BA7EB5D697289A778CD9A1 /* AgentsView.swift */; };
 		E543616CFADAA8F408AF74B2 /* AgentRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E543616CFADAA8F408AF74A1 /* AgentRunner.swift */; };
@@ -78,6 +79,7 @@
 		E5F621CAED4EDAA8E3D07EA1 /* FoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldersView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B12 /* AgentMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMapView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B11 /* TopicStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicStore.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B14 /* SpacechatDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacechatDot.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B13 /* WorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStore.swift; sourceTree = "<group>"; };
 		E5BA7EB5D697289A778CD9A1 /* AgentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsView.swift; sourceTree = "<group>"; };
 		E543616CFADAA8F408AF74A1 /* AgentRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunner.swift; sourceTree = "<group>"; };
@@ -225,6 +227,7 @@
 				E5F621CAED4EDAA8E3D07EA1 /* FoldersView.swift */,
 				A1B2C3D4E5F60718293A4B12 /* AgentMapView.swift */,
 				A1B2C3D4E5F60718293A4B11 /* TopicStore.swift */,
+				A1B2C3D4E5F60718293A4B14 /* SpacechatDot.swift */,
 				A1B2C3D4E5F60718293A4B13 /* WorkspaceStore.swift */,
 				E58F8E5FD4AB700AF8B11DA1 /* AgentAccess.swift */,
 				E54C5EA4328D7A9510C571A1 /* AgentAvatar.swift */,
@@ -428,6 +431,7 @@
 				E5F621CAED4EDAA8E3D07EB2 /* FoldersView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B02 /* AgentMapView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B01 /* TopicStore.swift in Sources */,
+				A1B2C3D4E5F60718293A4B04 /* SpacechatDot.swift in Sources */,
 				A1B2C3D4E5F60718293A4B03 /* WorkspaceStore.swift in Sources */,
 				E58F8E5FD4AB700AF8B11DB2 /* AgentAccess.swift in Sources */,
 				E54C5EA4328D7A9510C571B2 /* AgentAvatar.swift in Sources */,
