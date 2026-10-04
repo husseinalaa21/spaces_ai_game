@@ -333,6 +333,8 @@ struct ProjectRoomView: View {
     @State private var projectID = UUID()
     @State private var folder: String?
     @State private var filesNote = ""
+    @State private var messagesOpen = false
+    @State private var filesOpen = false
     @FocusState private var focused: Bool
 
     private var lead: SpacesAgent { team.first ?? agents.all[0] }
@@ -348,34 +350,36 @@ struct ProjectRoomView: View {
     private var ink: Color { palette.isDark ? .white : .black }
 
     var body: some View {
-        VStack(spacing: 0) {
-            topBar
-            if !runner.copies.isEmpty { copiesStrip }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(everything) { message in
-                            AgentBubble(message: message, agent: agent(named: message.from), folders: folders).id(message.id)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                        }
-                        if let typing { typingRow(typing) }
-                        if runner.running, let who = runner.speaking { workingRow(who) }
-                        if step == .done { doneCard }
-                        Color.clear.frame(height: 1).id("end")
-                    }
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.85), value: everything.count)
+        ZStack {
+            // The project's universe fills the screen: the team and its copies on a map, in the workspace's look.
+            ProjectUniverse(team: team, copies: runner.copies, speaking: runner.speaking ?? typing, running: runner.running, palette: palette,
+                            latest: latestWords, agentFor: agent(named:))
+                .ignoresSafeArea()
+            VStack(spacing: 0) {
+                topBar
+                HStack(alignment: .top, spacing: 10) {
+                    filesCard
+                    Spacer(minLength: 0)
+                    messagesCard
                 }
-                .onChange(of: everything.count) { _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
-                .onChange(of: typing) { _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
-                .onChange(of: step) { _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+                .padding(.horizontal, 12).padding(.top, 4)
+                Spacer(minLength: 0)
+                if step == .done { doneCard.padding(.horizontal, 14).padding(.bottom, 8) }
+                composer
             }
-            composer
+            if messagesOpen { messagesPanel.transition(.scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity)).zIndex(5) }
         }
         .background(palette.background.ignoresSafeArea())
         .overlay(alignment: .bottom) { ApprovalCard().padding(.bottom, 80) }
         .preferredColorScheme(palette.isDark ? .dark : .light)
         .task { await begin() }
+        .onChange(of: runner.copies) { jobs in
+            // every finished copy leaves its own file in the folder
+            guard let folder else { return }
+            for job in jobs where job.status == .done {
+                _ = try? FolderStore.shared.write(folder, "copies/\(job.parentName.lowercased())-copy-\(job.number).md", content: "# \(job.parentName) copy \(job.number)\n\nJob: \(job.task)\n\n\(job.result)\n", by: job.parentName)
+            }
+        }
         .onChange(of: runner.running) { running in
             guard !running, step == .working else { return }
             summary = runner.summary ?? ""
@@ -386,6 +390,97 @@ struct ProjectRoomView: View {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) { step = .done }
             if !summary.isEmpty { HapticsManager.shared.success() }
         }
+    }
+
+    /// What each dot said last (a copy by its own name), shown beside it on the map.
+    private var latestWords: [String: String] {
+        var out: [String: String] = [:]
+        for m in everything where m.kind == .agent { out[m.from] = m.text }
+        return out
+    }
+
+    private var cardFill: Color { palette.isDark ? Color.white.opacity(0.12) : Color.white.opacity(0.92) }
+
+    /// Top left: the project's files (its folder), live. Tap to see every file.
+    private var filesCard: some View {
+        let list: [WorkspaceFile] = folder.map { FolderStore.shared.files($0) } ?? []
+        return Button { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { filesOpen.toggle() } } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder.fill").font(.system(size: 12, weight: .bold))
+                    Text("Files").font(.system(size: 13, weight: .heavy, design: .rounded))
+                    Spacer(minLength: 0)
+                    Text("\(list.count)").font(.system(size: 11, weight: .bold)).opacity(0.5)
+                }
+                if list.isEmpty {
+                    Text(step == .done ? "No files" : "Saved here when the work is done").font(.system(size: 10.5)).opacity(0.55).multilineTextAlignment(.leading)
+                } else {
+                    ForEach(Array(list.prefix(filesOpen ? 30 : 3)), id: \.path) { file in
+                        Label(file.path, systemImage: "doc.text").font(.system(size: 10.5, weight: .medium)).lineLimit(1).labelStyle(.titleAndIcon)
+                    }
+                    if !filesOpen, list.count > 3 { Text("+\(list.count - 3) more").font(.system(size: 10)).opacity(0.5) }
+                }
+            }
+            .foregroundColor(ink)
+            .padding(10).frame(width: filesOpen ? 220 : 150, alignment: .leading)
+            .background(cardFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(ink.opacity(0.12)))
+        }.buttonStyle(.plain).accessibilityLabel("Files")
+    }
+
+    /// Top right: the conversation, newest three lines. Tap to open all of it.
+    private var messagesCard: some View {
+        let recent = Array(everything.filter { $0.kind == .agent || $0.kind == .user }.suffix(3))
+        return Button { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { messagesOpen = true } } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Image(systemName: "bubble.left.and.bubble.right.fill").font(.system(size: 12, weight: .bold))
+                    Text("Messages").font(.system(size: 13, weight: .heavy, design: .rounded))
+                    Spacer(minLength: 0)
+                    if runner.running || typing != nil { ProgressView().controlSize(.mini) }
+                }
+                ForEach(recent) { m in
+                    (Text(m.from + ": ").fontWeight(.bold) + Text(m.text)).font(.system(size: 10.5)).lineLimit(2).multilineTextAlignment(.leading)
+                }
+            }
+            .foregroundColor(ink)
+            .padding(10).frame(width: 190, alignment: .leading)
+            .background(cardFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(ink.opacity(0.12)))
+        }.buttonStyle(.plain).accessibilityLabel("Messages")
+    }
+
+    /// The whole conversation, opened from the top right.
+    private var messagesPanel: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Messages").font(.system(size: 16, weight: .heavy, design: .rounded)).foregroundColor(ink)
+                Spacer()
+                Button { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { messagesOpen = false } } label: {
+                    Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundColor(ink).frame(width: 30, height: 30).background(ink.opacity(0.08), in: Circle())
+                }.buttonStyle(.plain).accessibilityLabel("Close messages")
+            }.padding(.horizontal, 14).padding(.vertical, 10)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(everything) { message in
+                            AgentBubble(message: message, agent: agent(named: message.from), folders: folders).id(message.id)
+                        }
+                        if let typing { typingRow(typing) }
+                        if runner.running, let who = runner.speaking { workingRow(who) }
+                        Color.clear.frame(height: 1).id("end")
+                    }.padding(.horizontal, 12).padding(.bottom, 8)
+                }
+                .onAppear { proxy.scrollTo("end", anchor: .bottom) }
+                .onChange(of: everything.count) { _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+            }
+        }
+        .frame(width: 350, height: 520)
+        .background(palette.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(ink.opacity(0.15)))
+        .shadow(color: .black.opacity(0.15), radius: 14, y: 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        .padding(.top, GameHubView.bannerTopInset + 52).padding(.trailing, 12)
     }
 
     // MARK: pieces
@@ -581,6 +676,8 @@ struct ProjectRoomView: View {
         if step != .working { step = .working }
         focused = false
         summary = ""
+        // the project's folder exists from the start, so its files show up top left as they are made
+        if folder == nil { folder = FolderStore.shared.makeFolder(name.isEmpty ? "Project" : name) }
         runner.runTeam(task: task, team: team, folder: nil, canEdit: false, store: agents)
     }
 
@@ -614,5 +711,160 @@ struct ProjectRoomView: View {
         HapticsManager.shared.success()
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { saved = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { onClose() }
+    }
+}
+
+
+// MARK: - The universe of a project
+
+/// The team at work, on a map: the lead in the middle, the teammates around it, and every copy orbiting the dot it was made from, all joined
+/// by lines. The dot that is speaking grows and shows its latest words; a working copy pulses; a finished one gets a tick.
+struct ProjectUniverse: View {
+    let team: [SpacesAgent]
+    let copies: [AgentRunner.CopyJob]
+    let speaking: String?
+    let running: Bool
+    let palette: WorldBackground.Palette
+    let latest: [String: String]
+    let agentFor: (String) -> SpacesAgent?
+
+    @State private var offset = CGSize.zero
+    @State private var dragBase: CGSize?
+    @State private var scale: CGFloat = 0.85
+    @State private var pinchBase: CGFloat?
+
+    private var dark: Bool { palette.isDark }
+    private var ink: Color { dark ? .white : .black }
+    private let ring: CGFloat = 150
+
+    private func teamPoint(_ index: Int) -> CGPoint {
+        if index == 0 { return .zero }
+        let n = max(1, team.count - 1)
+        let angle = -Double.pi / 2 + Double(index - 1) * 2 * Double.pi / Double(n)
+        return CGPoint(x: cos(angle) * ring, y: sin(angle) * ring * 0.9)
+    }
+
+    private func copyPoint(_ job: AgentRunner.CopyJob) -> CGPoint {
+        guard let i = team.firstIndex(where: { $0.id == job.parentID }) else { return .zero }
+        let base = teamPoint(i)
+        let angle = Double(job.number) * 0.9 + 0.6
+        return CGPoint(x: base.x + cos(angle) * 78, y: base.y + sin(angle) * 78)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                palette.background
+                backdrop
+                TimelineView(.animation) { timeline in
+                    let t = timeline.date.timeIntervalSinceReferenceDate
+                    ZStack {
+                        Canvas { ctx, size in
+                            let c = CGPoint(x: size.width / 2, y: size.height / 2)
+                            for i in 1..<max(1, team.count) {
+                                let p = drift(teamPoint(i), i, t)
+                                var line = Path(); line.move(to: c); line.addLine(to: CGPoint(x: c.x + p.x, y: c.y + p.y))
+                                ctx.stroke(line, with: .color(Color(red: 0.16, green: 0.47, blue: 1).opacity(0.5)), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                            }
+                            for job in copies {
+                                guard let pi = team.firstIndex(where: { $0.id == job.parentID }) else { continue }
+                                let a = drift(teamPoint(pi), pi, t), b = drift(copyPoint(job), 20 + job.number, t)
+                                var line = Path(); line.move(to: CGPoint(x: c.x + a.x, y: c.y + a.y)); line.addLine(to: CGPoint(x: c.x + b.x, y: c.y + b.y))
+                                let color: Color = job.status == .failed ? .red : (job.status == .done ? .green : Color(red: 0.16, green: 0.47, blue: 1))
+                                ctx.stroke(line, with: .color(color.opacity(job.status == .working ? 0.8 : 0.45)), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: job.status == .working ? [5, 5] : []))
+                            }
+                        }
+                        ForEach(Array(team.enumerated()), id: \.element.id) { index, member in
+                            let p = drift(teamPoint(index), index, t)
+                            member_view(member, lead: index == 0).offset(x: p.x, y: p.y)
+                        }
+                        ForEach(copies) { job in
+                            let p = drift(copyPoint(job), 20 + job.number, t)
+                            copy_view(job).offset(x: p.x, y: p.y).transition(.scale(scale: 0.1).combined(with: .opacity))
+                        }
+                    }
+                    .frame(width: 1600, height: 1600)
+                }
+                .scaleEffect(scale)
+                .offset(x: offset.width, y: offset.height)
+                .frame(width: geo.size.width, height: geo.size.height)
+                .animation(.spring(response: 0.5, dampingFraction: 0.75), value: copies.count)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
+            .contentShape(Rectangle())
+            .simultaneousGesture(DragGesture(minimumDistance: 6).onChanged { v in
+                if pinchBase != nil { return }
+                if dragBase == nil { dragBase = offset }
+                offset = CGSize(width: (dragBase?.width ?? 0) + v.translation.width, height: (dragBase?.height ?? 0) + v.translation.height)
+            }.onEnded { _ in dragBase = nil })
+            .simultaneousGesture(MagnificationGesture().onChanged { v in
+                if pinchBase == nil { pinchBase = scale }
+                scale = min(2, max(0.3, (pinchBase ?? scale) * v))
+            }.onEnded { _ in pinchBase = nil })
+            .overlay(alignment: .topTrailing) {
+                Button { withAnimation(.spring(response: 0.5, dampingFraction: 0.84)) { offset = .zero; scale = 0.85 } } label: {
+                    Image(systemName: "scope").font(.system(size: 14, weight: .bold)).foregroundColor(ink).frame(width: 36, height: 36).background(.ultraThinMaterial, in: Circle())
+                }.buttonStyle(.plain).padding(12).accessibilityLabel("Back to the middle")
+            }
+        }
+    }
+
+    private func drift(_ p: CGPoint, _ index: Int, _ t: Double) -> CGPoint {
+        let phase = Double(index) * 1.7
+        return CGPoint(x: p.x + sin(t * 0.5 + phase) * 5, y: p.y + cos(t * 0.42 + phase * 1.3) * 6)
+    }
+
+    private var backdrop: some View {
+        Canvas { ctx, s in
+            let step: CGFloat = 44 * max(0.6, min(1.5, scale))
+            let cx = s.width / 2 + offset.width, cy = s.height / 2 + offset.height
+            var x = cx.truncatingRemainder(dividingBy: step) - step
+            while x < s.width + step {
+                var y = cy.truncatingRemainder(dividingBy: step) - step
+                while y < s.height + step {
+                    ctx.fill(Path(ellipseIn: CGRect(x: x - 1.2, y: y - 1.2, width: 2.4, height: 2.4)), with: .color(palette.line.opacity(dark ? 0.55 : 0.8)))
+                    y += step
+                }
+                x += step
+            }
+        }.allowsHitTesting(false)
+    }
+
+    private func member_view(_ agent: SpacesAgent, lead: Bool) -> some View {
+        let talking = speaking == agent.name
+        let words = latest[agent.name]
+        return VStack(spacing: 4) {
+            if talking, let words {
+                Text(words).font(.system(size: 11, weight: .medium)).foregroundColor(ink).lineLimit(3).multilineTextAlignment(.leading)
+                    .padding(.horizontal, 10).padding(.vertical, 7).frame(width: 170)
+                    .background(dark ? Color.white.opacity(0.14) : .white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(ink.opacity(0.12)))
+                    .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
+            }
+            ZStack {
+                if talking { Circle().stroke(Color(red: 0.16, green: 0.47, blue: 1), lineWidth: 3).frame(width: (lead ? 108 : 86), height: (lead ? 108 : 86)) }
+                AgentAvatar(agent: agent, size: lead ? 88 : 68)
+            }
+            .scaleEffect(talking ? 1.12 : 1)
+            Text(agent.name + (lead ? " · lead" : "")).font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundColor(ink)
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: talking)
+    }
+
+    private func copy_view(_ job: AgentRunner.CopyJob) -> some View {
+        let parent = team.first { $0.id == job.parentID }
+        let working = job.status == .working
+        return VStack(spacing: 2) {
+            ZStack(alignment: .bottomTrailing) {
+                if let parent { AgentAvatar(agent: parent, size: 38, animated: false).opacity(working ? 0.8 : 1) }
+                switch job.status {
+                case .working: ProgressView().scaleEffect(0.5).frame(width: 15, height: 15).background(palette.background, in: Circle())
+                case .done: Image(systemName: "checkmark.circle.fill").font(.system(size: 14)).foregroundColor(.green).background(palette.background, in: Circle())
+                case .failed: Image(systemName: "exclamationmark.circle.fill").font(.system(size: 14)).foregroundColor(.red).background(palette.background, in: Circle())
+                }
+            }
+            Text("copy \(job.number)").font(.system(size: 9.5, weight: .bold)).foregroundColor(ink.opacity(0.55))
+        }
     }
 }
