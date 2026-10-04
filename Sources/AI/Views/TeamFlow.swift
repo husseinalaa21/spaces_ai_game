@@ -365,7 +365,7 @@ struct ProjectRoomView: View {
         ZStack {
             // The project's universe fills the screen: the team and its copies on a map, in the workspace's look.
             ProjectUniverse(team: team, copies: runner.copies, speaking: runner.speaking ?? typing, running: runner.running, palette: palette,
-                            latest: latestWords, agentFor: agent(named:))
+                            latest: latestWords, finished: step == .done, summary: summary, leadFooter: step == .done ? AnyView(finishActions) : nil, agentFor: agent(named:))
                 .ignoresSafeArea()
             VStack(spacing: 0) {
                 topBar
@@ -376,7 +376,6 @@ struct ProjectRoomView: View {
                 }
                 .padding(.horizontal, 12).padding(.top, 4)
                 Spacer(minLength: 0)
-                if step == .done { doneCard.padding(.horizontal, 14).padding(.bottom, 8) }
                 composer
             }
             if filesOpen, let folder { ProjectFilesPanel(folder: folder, palette: palette, who: lead.name) { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { filesOpen = false } }.transition(.scale(scale: 0.9, anchor: .topLeading).combined(with: .opacity)).zIndex(5) }
@@ -559,49 +558,39 @@ struct ProjectRoomView: View {
         }
     }
 
-    private var doneCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(summary.isEmpty ? "The team stopped" : "Finished", systemImage: summary.isEmpty ? "pause.circle.fill" : "checkmark.circle.fill")
-                .font(.system(size: 14, weight: .heavy, design: .rounded)).foregroundColor(summary.isEmpty ? .orange : Color(red: 0.2, green: 0.7, blue: 0.4))
-            if !summary.isEmpty { Text(summary).font(.system(size: 14.5)).foregroundColor(ink).textSelection(.enabled) }
-            if authState.spacechatUsername == nil && summary.isEmpty {
-                Button("Log in with Spacechat") { onLogin() }.font(.system(size: 14, weight: .bold))
-            }
+    /// What can be done once the team has finished: shown under the lead dot on the map (not in a section of its own).
+    private var finishActions: some View {
+        VStack(spacing: 8) {
             if let folder, forFolder == nil {
-                Label("Work saved in the folder “\(folder)”", systemImage: "folder.fill").font(.system(size: 12.5, weight: .semibold)).foregroundColor(ink.opacity(0.6))
+                Label("Work saved in the folder “\(folder)”", systemImage: "folder.fill").font(.system(size: 11.5, weight: .semibold)).foregroundColor(ink.opacity(0.6))
             } else if !filesNote.isEmpty {
-                Text(filesNote).font(.system(size: 12)).foregroundColor(.orange)
+                Text(filesNote).font(.system(size: 11.5)).foregroundColor(.orange)
+            }
+            if authState.spacechatUsername == nil && summary.isEmpty {
+                Button("Log in with Spacechat") { onLogin() }.font(.system(size: 13, weight: .bold))
             }
             if forFolder != nil {
-                Label("This folder's space is saved: its team, files and history", systemImage: "checkmark").font(.system(size: 12.5, weight: .bold)).foregroundColor(.green)
                 Button { onClose() } label: {
-                    Text("Back to the folder").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(ink)
-                        .frame(maxWidth: .infinity).frame(height: 44).background(ink.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    Text("Back to the folder").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundColor(ink)
+                        .padding(.horizontal, 16).frame(height: 36).background(ink.opacity(0.1), in: Capsule())
                 }.buttonStyle(PressableButtonStyle())
             } else if saved {
-                Label("Saved to your home page", systemImage: "checkmark").font(.system(size: 13, weight: .bold)).foregroundColor(.green)
+                Label("Saved to your home page", systemImage: "checkmark").font(.system(size: 12.5, weight: .bold)).foregroundColor(.green)
             } else if !summary.isEmpty {
-                Text("Save this project to your home page?").font(.system(size: 13, weight: .semibold)).foregroundColor(ink.opacity(0.6))
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Button { save() } label: {
-                        Text("Yes, save it").font(.system(size: 15, weight: .heavy, design: .rounded)).foregroundColor(.white)
-                            .frame(maxWidth: .infinity).frame(height: 46).background(Color(red: 0.16, green: 0.47, blue: 1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        Text("Save to home").font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundColor(.white)
+                            .padding(.horizontal, 16).frame(height: 36).background(Color(red: 0.16, green: 0.47, blue: 1), in: Capsule())
                     }.buttonStyle(PressableButtonStyle())
                     Button { onClose() } label: {
-                        Text("No").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(ink)
-                            .frame(width: 90, height: 46).background(ink.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        Text("No").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundColor(ink)
+                            .padding(.horizontal, 18).frame(height: 36).background(ink.opacity(0.1), in: Capsule())
                     }.buttonStyle(PressableButtonStyle())
                 }
             } else {
-                Button("Try again") { Task { await run(change: nil) } }.font(.system(size: 14, weight: .bold))
+                Button("Try again") { Task { await run(change: nil) } }.font(.system(size: 13, weight: .bold))
             }
-            Text("Want changes? Tell the team below.").font(.system(size: 12)).foregroundColor(ink.opacity(0.4))
         }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(14)
-        .background(Color(red: 0.2, green: 0.7, blue: 0.4).opacity(0.14), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .background(palette.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(ink.opacity(0.1)))
-        .transition(.scale(scale: 0.92).combined(with: .opacity))
     }
 
     private var composer: some View {
@@ -779,6 +768,10 @@ struct ProjectUniverse: View {
     let running: Bool
     let palette: WorldBackground.Palette
     let latest: [String: String]
+    /// The team has finished: each dot shows it, and the lead shows the result and what to do next.
+    var finished = false
+    var summary = ""
+    var leadFooter: AnyView? = nil
     let agentFor: (String) -> SpacesAgent?
 
     @State private var offset = CGSize.zero
@@ -884,15 +877,27 @@ struct ProjectUniverse: View {
         }.allowsHitTesting(false)
     }
 
+    /// What this dot is doing, in a word.
+    private func status(_ agent: SpacesAgent, lead: Bool) -> (text: String, color: Color) {
+        if finished { return summary.isEmpty && lead ? ("Stopped", .orange) : (lead ? "Finished" : "Done", Color(red: 0.2, green: 0.7, blue: 0.4)) }
+        if speaking == agent.name { return ("Working…", Color(red: 0.16, green: 0.47, blue: 1)) }
+        if running { return ("Waiting", ink.opacity(0.45)) }
+        return ("Ready", ink.opacity(0.45))
+    }
+
     private func member_view(_ agent: SpacesAgent, lead: Bool) -> some View {
         let talking = speaking == agent.name
-        let words = latest[agent.name]
+        let finalResult = finished && lead && !summary.isEmpty
+        let words = finalResult ? summary : latest[agent.name]
+        let state = status(agent, lead: lead)
         return VStack(spacing: 4) {
-            if talking, let words {
-                Text(words).font(.system(size: 11, weight: .medium)).foregroundColor(ink).lineLimit(3).multilineTextAlignment(.leading)
-                    .padding(.horizontal, 10).padding(.vertical, 7).frame(width: 170)
+            // what the dot last said (the lead shows the final result when the work is done), above it
+            if let words, !words.isEmpty {
+                Text(words).font(.system(size: 11, weight: .medium)).foregroundColor(ink).lineLimit(finalResult ? 7 : 3).multilineTextAlignment(.leading)
+                    .padding(.horizontal, 10).padding(.vertical, 7).frame(width: finalResult ? 230 : 170)
                     .background(dark ? Color.white.opacity(0.14) : .white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(ink.opacity(0.12)))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(finalResult ? state.color.opacity(0.6) : ink.opacity(0.12), lineWidth: finalResult ? 1.5 : 1))
+                    .opacity(talking || finalResult ? 1 : 0.8)
                     .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
             }
             ZStack {
@@ -901,8 +906,15 @@ struct ProjectUniverse: View {
             }
             .scaleEffect(talking ? 1.12 : 1)
             Text(agent.name + (lead ? " · lead" : "")).font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundColor(ink)
+            // its status, under it
+            HStack(spacing: 4) {
+                if talking && running { ProgressView().controlSize(.mini) } else { Circle().fill(state.color).frame(width: 6, height: 6) }
+                Text(state.text).font(.system(size: 10.5, weight: .bold)).foregroundColor(state.color)
+            }
+            if lead, let leadFooter { leadFooter.padding(.top, 4).transition(.opacity) }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.7), value: talking)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: words)
     }
 
     private func copy_view(_ job: AgentRunner.CopyJob) -> some View {
