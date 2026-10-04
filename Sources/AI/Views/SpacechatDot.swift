@@ -35,6 +35,59 @@ final class SpacechatDotShaker: ObservableObject {
     private func pick() { activeId = counts.keys.randomElement() }
 }
 
+/// A whole look for every dot in the app. Classic is free and always there; the rest are bought in the Store.
+enum DotTheme: String, CaseIterable, Identifiable, Codable {
+    case classic, glass, ink, neon, candy, chrome, sunset
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .classic: return "Classic"
+        case .glass: return "Glass"
+        case .ink: return "Ink"
+        case .neon: return "Neon"
+        case .candy: return "Candy"
+        case .chrome: return "Chrome"
+        case .sunset: return "Sunset"
+        }
+    }
+
+    var tagline: String {
+        switch self {
+        case .classic: return "The original glossy dots"
+        case .glass: return "Frosted, see-through"
+        case .ink: return "Matte black and white"
+        case .neon: return "Dark with a glowing edge"
+        case .candy: return "Soft pastels, bold eyes"
+        case .chrome: return "Polished metal"
+        case .sunset: return "Two-colour gradients"
+        }
+    }
+
+    var isFree: Bool { self == .classic }
+    var productID: String { StoreGoods.themeID(self) }
+}
+
+/// Which theme the dots wear right now. Every dot reads this, so changing it changes them all at once, everywhere.
+@MainActor
+final class DotThemeStore: ObservableObject {
+    static let shared = DotThemeStore()
+    private static let key = "spaces.dotTheme"
+    @Published private(set) var current: DotTheme
+
+    init() {
+        current = DotTheme(rawValue: UserDefaults.standard.string(forKey: Self.key) ?? "") ?? .classic
+    }
+
+    func select(_ theme: DotTheme) {
+        current = theme
+        UserDefaults.standard.set(theme.rawValue, forKey: Self.key)
+    }
+
+    /// The theme to draw with: the chosen one while it is still owned, otherwise Classic.
+    var effective: DotTheme { current.isFree || StoreManager.shared.has(current.productID) ? current : .classic }
+}
+
 enum SpacechatDotGeometry {
     static let shapeNames = ["circle", "squircle", "star", "drop", "hexagon", "heart", "cloud", "triangle", "octagon", "star6", "blob", "diamond", "gear", "pentagon", "plus", "burst", "flower", "star4"]
     static let eyes: [String: (y: Double, scale: Double)] = [
@@ -137,7 +190,11 @@ struct SpacechatDotFace: View {
     /// Use this shape (one of `SpacechatDotGeometry.shapeNames`) instead of the one worked out from the key.
     var shape: String? = nil
 
+    /// Draw with this theme instead of the one the person has chosen (previews in the Store).
+    var theme: DotTheme? = nil
+
     @ObservedObject private var shaker = SpacechatDotShaker.shared
+    @ObservedObject private var themes = DotThemeStore.shared
     @State private var identity = UUID().uuidString
 
     var body: some View {
@@ -167,9 +224,7 @@ struct SpacechatDotFace: View {
         let blinkPeriod = 3.4 + Double(h % 6) * 0.6
         let blinkShift = -Double(h % 9) * 0.5
         let path = SpacechatDotGeometry.path(shape)
-        let stroke = SpacechatDotGeometry.color(h: hue, s: 78, l: 46)
-        let light = SpacechatDotGeometry.color(h: hue, s: 88, l: 70)
-        let dark = SpacechatDotGeometry.color(h: hue, s: 80, l: 52)
+        let dotTheme = self.theme ?? themes.effective
 
         return Canvas { context, canvasSize in
             let unit = canvasSize.width / 100
@@ -190,13 +245,7 @@ struct SpacechatDotFace: View {
                 context.translateBy(x: -50, y: -55)
             }
 
-            context.stroke(path, with: .color(stroke), style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
-            context.fill(path, with: .linearGradient(Gradient(colors: [light, dark]), startPoint: CGPoint(x: 20, y: 0), endPoint: CGPoint(x: 80, y: 100)))
-            context.drawLayer { layer in
-                layer.translateBy(x: 36, y: 30)
-                layer.rotate(by: .degrees(-28))
-                layer.fill(Path(ellipseIn: CGRect(x: -12, y: -6, width: 24, height: 12)), with: .color(Color.white.opacity(0.35)))
-            }
+            Self.paint(&context, path: path, theme: dotTheme, hue: hue)
 
             // the eyes: they look around slowly (down, up, aside, changing height) and blink
             let look = eye.scale * 3.4
@@ -216,9 +265,84 @@ struct SpacechatDotFace: View {
                 context.drawLayer { layer in
                     layer.translateBy(x: 50 + side * gap + looked[0], y: eye.y + looked[1])
                     layer.scaleBy(x: 1, y: looked[3] * blink)
-                    layer.fill(Path(ellipseIn: CGRect(x: -rx, y: -ry, width: rx * 2, height: ry * 2)), with: .color(.white))
+                    if dotTheme == .neon {
+                        layer.fill(Path(ellipseIn: CGRect(x: -rx * 1.5, y: -ry * 1.3, width: rx * 3, height: ry * 2.6)), with: .color(Self.eyeColor(dotTheme, hue: hue).opacity(0.25)))
+                    }
+                    layer.fill(Path(ellipseIn: CGRect(x: -rx, y: -ry, width: rx * 2, height: ry * 2)), with: .color(Self.eyeColor(dotTheme, hue: hue)))
+                    if dotTheme == .candy || dotTheme == .glass {
+                        layer.fill(Path(ellipseIn: CGRect(x: rx * 0.05, y: -ry * 0.75, width: rx * 0.7, height: rx * 0.7)), with: .color(.white.opacity(0.95)))
+                    }
                 }
             }
+        }
+    }
+
+    private static func eyeColor(_ theme: DotTheme, hue: Double) -> Color {
+        switch theme {
+        case .classic, .sunset: return .white
+        case .glass: return SpacechatDotGeometry.color(h: hue, s: 60, l: 20)
+        case .ink: return Color(white: 0.06)
+        case .neon: return SpacechatDotGeometry.color(h: hue, s: 100, l: 72)
+        case .candy: return SpacechatDotGeometry.color(h: hue, s: 55, l: 24)
+        case .chrome: return Color(white: 0.1)
+        }
+    }
+
+    /// The body of the dot (outline, fill, shine) in the look of a theme. Coordinates are 0...100.
+    private static func paint(_ context: inout GraphicsContext, path: Path, theme: DotTheme, hue: Double) {
+        let c = SpacechatDotGeometry.color
+        let round = StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
+        func width(_ w: CGFloat) -> StrokeStyle { StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round) }
+        func shine(_ ctx: inout GraphicsContext, _ opacity: Double, w: CGFloat = 24, h: CGFloat = 12) {
+            ctx.drawLayer { layer in
+                layer.translateBy(x: 36, y: 30)
+                layer.rotate(by: .degrees(-28))
+                layer.fill(Path(ellipseIn: CGRect(x: -w / 2, y: -h / 2, width: w, height: h)), with: .color(Color.white.opacity(opacity)))
+            }
+        }
+        switch theme {
+        case .classic:
+            context.stroke(path, with: .color(c(hue, 78, 46)), style: round)
+            context.fill(path, with: .linearGradient(Gradient(colors: [c(hue, 88, 70), c(hue, 80, 52)]), startPoint: CGPoint(x: 20, y: 0), endPoint: CGPoint(x: 80, y: 100)))
+            shine(&context, 0.35)
+        case .glass:
+            context.stroke(path, with: .color(c(hue, 80, 60).opacity(0.45)), style: width(8))
+            context.fill(path, with: .linearGradient(Gradient(colors: [c(hue, 85, 82).opacity(0.62), c(hue, 85, 58).opacity(0.38)]), startPoint: CGPoint(x: 20, y: 0), endPoint: CGPoint(x: 80, y: 100)))
+            context.stroke(path, with: .color(Color.white.opacity(0.85)), style: width(2.6))
+            shine(&context, 0.6, w: 30, h: 13)
+            context.drawLayer { layer in
+                layer.translateBy(x: 62, y: 76)
+                layer.rotate(by: .degrees(-28))
+                layer.fill(Path(ellipseIn: CGRect(x: -9, y: -3, width: 18, height: 6)), with: .color(Color.white.opacity(0.28)))
+            }
+        case .ink:
+            context.fill(path, with: .linearGradient(Gradient(colors: [Color(white: 0.99), Color(white: 0.86)]), startPoint: CGPoint(x: 30, y: 0), endPoint: CGPoint(x: 70, y: 100)))
+            context.stroke(path, with: .color(Color(white: 0.06)), style: width(6.5))
+        case .neon:
+            context.stroke(path, with: .color(c(hue, 100, 58).opacity(0.14)), style: width(17))
+            context.stroke(path, with: .color(c(hue, 100, 58).opacity(0.24)), style: width(11))
+            context.fill(path, with: .linearGradient(Gradient(colors: [c(hue, 55, 16), c(hue, 60, 8)]), startPoint: CGPoint(x: 30, y: 0), endPoint: CGPoint(x: 70, y: 100)))
+            context.stroke(path, with: .color(c(hue, 100, 64)), style: width(4))
+            context.stroke(path, with: .color(Color.white.opacity(0.55)), style: width(1.2))
+        case .candy:
+            context.drawLayer { layer in
+                layer.translateBy(x: 0, y: 4.5)
+                layer.fill(path, with: .color(Color.black.opacity(0.14)))
+                layer.stroke(path, with: .color(Color.black.opacity(0.14)), style: width(9))
+            }
+            context.stroke(path, with: .color(.white), style: width(9))
+            context.fill(path, with: .linearGradient(Gradient(colors: [c(hue, 92, 82), c(hue, 90, 70)]), startPoint: CGPoint(x: 30, y: 0), endPoint: CGPoint(x: 70, y: 100)))
+            shine(&context, 0.55, w: 20, h: 10)
+        case .chrome:
+            context.stroke(path, with: .color(Color(white: 0.28)), style: width(5.5))
+            context.fill(path, with: .linearGradient(Gradient(stops: [
+                .init(color: Color(white: 0.98), location: 0), .init(color: c(hue, 22, 66), location: 0.32), .init(color: Color(white: 0.30), location: 0.52),
+                .init(color: c(hue, 18, 78), location: 0.74), .init(color: Color(white: 0.55), location: 1)]), startPoint: CGPoint(x: 30, y: 0), endPoint: CGPoint(x: 55, y: 100)))
+            shine(&context, 0.7, w: 28, h: 6)
+        case .sunset:
+            context.fill(path, with: .linearGradient(Gradient(colors: [c(hue, 92, 64), c(hue + 70, 92, 60)]), startPoint: CGPoint(x: 10, y: 0), endPoint: CGPoint(x: 90, y: 100)))
+            context.stroke(path, with: .color(Color.white.opacity(0.28)), style: width(2.5))
+            shine(&context, 0.3, w: 26, h: 12)
         }
     }
 

@@ -44,6 +44,16 @@ final class StoreManager: ObservableObject {
     /// Set by the screen that owns the account: buying needs a signed-in account.
     var requiresSignIn: () -> Bool = { false }
 
+    /// Consumable Point Packs, keyed by Product ID as registered in App Store Connect, mapped to the Points each credits.
+    /// The Starter Pack's ID really is the string "0.99" — product IDs are permanent, so it must keep matching.
+    static let pointPackGrants: [String: Int] = ["0.99": 500, "value": 3000, "mega": 12000]
+    /// Credits Points for a consumable. Set once by the app so a transaction redelivered through `Transaction.updates`
+    /// (after a crash, or an Ask to Buy approval) still pays out rather than being finished silently.
+    var grantPoints: ((Int) -> Void)?
+    @Published private(set) var pointPackProducts: [String: Product] = [:]
+    /// Items bought with Points (kept on this device, like the Points themselves).
+    @Published private(set) var pointsOwned: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "spaces.owned.withPoints") ?? [])
+
     @Published private(set) var goods: [String: Product] = [:]
     /// What this Apple ID owns of `StoreGoods`, read from Apple's entitlements and cached for offline use.
     @Published private(set) var owned: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "spaces.owned.goods") ?? [])
@@ -80,19 +90,24 @@ final class StoreManager: ObservableObject {
     // MARK: - Loading
 
     func loadProduct() async {
-        guard premiumProduct == nil || goods.isEmpty else { return }
+        guard premiumProduct == nil || goods.isEmpty || pointPackProducts.isEmpty else { return }
         isLoadingProduct = true
         defer { isLoadingProduct = false }
         // A retry starts clean: without this, "Try Again" would keep showing
         // the failure it is trying to recover from even after it succeeds.
         errorMessage = nil
         do {
-            let ids = Set([StoreManager.premiumProductID]).union(StoreGoods.allIDs)
+            let ids = Set([StoreManager.premiumProductID]).union(StoreGoods.allIDs).union(StoreManager.pointPackGrants.keys)
             let products = try await Product.products(for: ids)
             premiumProduct = products.first { $0.id == StoreManager.premiumProductID }
             goods = Dictionary(
                 uniqueKeysWithValues: products
                     .filter { StoreGoods.allIDs.contains($0.id) }
+                    .map { ($0.id, $0) }
+            )
+            pointPackProducts = Dictionary(
+                uniqueKeysWithValues: products
+                    .filter { StoreManager.pointPackGrants[$0.id] != nil }
                     .map { ($0.id, $0) }
             )
             if premiumProduct == nil {
@@ -177,7 +192,43 @@ final class StoreManager: ObservableObject {
     }
 
     /// Whether the person can use this item: bought on its own, or Premium (which unlocks every look).
-    func has(_ id: String) -> Bool { isSubscribed || owned.contains(id) }
+    func has(_ id: String) -> Bool { isSubscribed || owned.contains(id) || pointsOwned.contains(id) }
+
+    /// Keeps an item that was paid for with Points.
+    func unlockWithPoints(_ id: String) {
+        pointsOwned.insert(id)
+        UserDefaults.standard.set(Array(pointsOwned), forKey: "spaces.owned.withPoints")
+    }
+
+    /// Buys one consumable Point Pack. Points are credited by `redeem`, so the payout path is the same whether the
+    /// transaction arrives here or is redelivered later by `Transaction.updates`.
+    @discardableResult
+    func purchasePointPack(id: String) async -> Bool {
+        guard let product = pointPackProducts[id] else {
+            errorMessage = "That pack isn't available right now."
+            return false
+        }
+        guard !purchaseInFlight else { return false }
+        purchaseInFlight = true
+        defer { purchaseInFlight = false }
+        do {
+            switch try await product.purchase() {
+            case .success(let verification):
+                await redeem(verification)
+                return true
+            case .userCancelled:
+                return false
+            case .pending:
+                errorMessage = "Your purchase is pending approval."
+                return false
+            @unknown default:
+                return false
+            }
+        } catch {
+            errorMessage = "The purchase couldn't be completed. Please try again."
+            return false
+        }
+    }
 
     /// Buys one dot design, universe or Customize through Apple's purchase sheet.
     @discardableResult
@@ -212,11 +263,15 @@ final class StoreManager: ObservableObject {
     }
 
     /// Localized price of an item, or nil until its product loads.
-    func price(for id: String) -> String? { goods[id]?.displayPrice }
+    func price(for id: String) -> String? { (goods[id] ?? pointPackProducts[id])?.displayPrice }
 
     /// Closes out a verified transaction. Unverified ones failed Apple's own signature check and are never finished or granted.
     private func redeem(_ result: VerificationResult<Transaction>) async {
         guard case .verified(let transaction) = result else { return }
+        // A consumable is finished only AFTER its Points are delivered, or a crash in between would lose the purchase.
+        if transaction.revocationDate == nil, let points = StoreManager.pointPackGrants[transaction.productID] {
+            grantPoints?(points)
+        }
         await transaction.finish()
     }
 
@@ -281,22 +336,20 @@ final class StoreManager: ObservableObject {
     }
 }
 
-/// What the Store sells, for real money.
+/// What the Store sells.
 enum StoreGoods {
     static let customizeID = "dots_customize"
-    /// Dot designs everyone has; every other shape is bought.
-    static let freeShapes: Set<String> = ["circle", "squircle", "hexagon", "flower"]
-    static let paidShapes: [String] = SpacechatDotGeometry.shapeNames.filter { !freeShapes.contains($0) }
     static let paidUniverses: [UniverseTheme] = UniverseTheme.allCases.filter { $0 != .white }
+    static let paidThemes: [DotTheme] = DotTheme.allCases.filter { $0 != .classic }
 
-    /// What a shape is called to the person.
-    static func shapeName(_ shape: String) -> String {
-        ["star6": "Six-point star", "star4": "Sparkle", "blob": "Round blob", "cloud": "Cloud", "burst": "Burst"][shape] ?? shape.capitalized
-    }
-    static func dotID(_ shape: String) -> String { "dot_" + shape }
+    static func themeID(_ theme: DotTheme) -> String { "dottheme_" + theme.rawValue }
     static func universeID(_ theme: UniverseTheme) -> String { "universe_" + theme.rawValue }
 
+    /// What an item costs in Points instead of money.
+    static let themePoints = 3000
+    static let universePoints = 1200
+
     static var allIDs: Set<String> {
-        Set(paidShapes.map(dotID)).union(paidUniverses.map(universeID)).union([customizeID])
+        Set(paidThemes.map(themeID)).union(paidUniverses.map(universeID)).union([customizeID])
     }
 }

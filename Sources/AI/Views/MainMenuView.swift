@@ -1346,17 +1346,103 @@ struct StoreView: View {
     @ObservedObject var authState: AuthState
     var save: () -> Void
     @State private var showSignInGate = false
+    @ObservedObject private var themes = DotThemeStore.shared
     @Environment(\.dismiss) private var dismiss
 
     private let columns = [GridItem(.adaptive(minimum: 92), spacing: 12)]
+
+    private let gold = DotStyle.gold.swatchColor
+
+    private let pointPacks: [(name: String, productID: String, points: Int, multiplier: Int, fallbackPrice: String, icon: String, color: Color, highlight: Bool)] = [
+        ("Starter Pack", "0.99", 500, 1, "$0.99", "shippingbox.fill", IconPalette.blue, false),
+        ("Value Pack", "value", 3000, 2, "$2.99", "gift.fill", IconPalette.pink, false),
+        ("Mega Pack", "mega", 12000, 3, "$7.99", "crown.fill", IconPalette.gold, true)
+    ]
+
+    private var balanceCard: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Your Points").font(.system(size: 13, weight: .medium)).foregroundColor(.black.opacity(0.55))
+                HStack(spacing: 6) {
+                    Image("Sparkle").renderingMode(.template).resizable().frame(width: 18, height: 18).foregroundColor(gold)
+                    Text(formattedPoints).font(.system(size: 26, weight: .bold, design: .rounded)).contentTransition(.numericText())
+                }
+            }
+            Spacer()
+            if player.profile.isPremium {
+                Label("Premium Active", systemImage: "checkmark.seal.fill")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundColor(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 8).background(Color.black, in: Capsule())
+            }
+        }
+        .padding(18)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: player.profile.points)
+    }
+
+    private var pointPacksSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("POINT PACKS")
+            VStack(spacing: 12) {
+                ForEach(pointPacks, id: \.name) { pack in
+                    Button(action: { buyPointPack(pack.productID) }) {
+                        HStack(spacing: 14) {
+                            Image(systemName: pack.icon).font(.system(size: 22, weight: .semibold)).foregroundColor(pack.color).frame(width: 40, height: 40)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(pack.name).font(.system(size: 15, weight: .semibold, design: .rounded)).foregroundColor(.black)
+                                HStack(spacing: 4) {
+                                    Image("Sparkle").renderingMode(.template).resizable().frame(width: 11, height: 11).foregroundColor(gold)
+                                    Text("+\(pack.points)").font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundColor(.black.opacity(0.7))
+                                    if pack.multiplier > 1 { Text("· \(pack.multiplier)× value").font(.system(size: 11)).foregroundColor(pack.color) }
+                                }
+                            }
+                            Spacer()
+                            Text(store.price(for: pack.productID) ?? pack.fallbackPrice)
+                                .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundColor(.white)
+                                .padding(.horizontal, 14).padding(.vertical, 8).background(Color.black, in: Capsule())
+                        }
+                        .padding(14)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
+                        .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
+                        .overlay(alignment: .topTrailing) {
+                            if pack.multiplier > 1 {
+                                Text(pack.highlight ? "BEST VALUE · \(pack.multiplier)× POINTS" : "\(pack.multiplier)× POINTS")
+                                    .font(.system(size: 9, weight: .bold, design: .rounded)).foregroundColor(.white)
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(pack.highlight ? gold : pack.color, in: Capsule()).offset(x: -10, y: -8)
+                            }
+                        }
+                    }
+                    .buttonStyle(PressableButtonStyle(scale: 0.97))
+                }
+            }
+            Text("Points are added as soon as the purchase completes. Spend them on dot styles and universes above.")
+                .font(.system(size: 11)).foregroundColor(.black.opacity(0.4))
+        }
+    }
+
+    private var formattedPoints: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: player.profile.points)) ?? "\(player.profile.points)"
+    }
+
+    private func buyPointPack(_ id: String) {
+        guard !authState.isGuest else { showSignInGate = true; return }
+        Task { if await store.purchasePointPack(id: id) { HapticsManager.shared.impact(.light) } }
+    }
+
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    customizeSection
-                    dotDesignsSection
+                    balanceCard
+                    dotStylesSection
                     universesSection
+                    customizeSection
+                    pointPacksSection
                     membershipSection
 
                     Text("Purchases are made with your Apple Account and come back with Restore Purchases on any device signed in to it.")
@@ -1404,19 +1490,76 @@ struct StoreView: View {
         }
     }
 
-    private var dotDesignsSection: some View {
+    /// Whole dot styles: buying one changes every dot in the app, and Classic is always one tap away.
+    private var dotStylesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("DOT DESIGNS")
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(StoreGoods.paidShapes, id: \.self) { shape in
-                    tile(name: StoreGoods.shapeName(shape), id: StoreGoods.dotID(shape)) {
-                        SpacechatDotFace(key: shape, size: 54, animated: false, hue: 0.60 * 360, shape: shape).frame(height: 58)
-                    }
+            sectionTitle("DOT STYLES")
+            VStack(spacing: 0) {
+                ForEach(DotTheme.allCases) { theme in
+                    themeRow(theme)
+                    if theme != DotTheme.allCases.last { Divider().padding(.leading, 16) }
                 }
             }
-            .padding(16)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+        }
+    }
+
+    private func themeRow(_ theme: DotTheme) -> some View {
+        let owned = theme.isFree || store.has(theme.productID)
+        let applied = themes.effective == theme
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(theme.displayName).font(.system(size: 16, weight: .bold, design: .rounded))
+                    Text(theme.tagline).font(.system(size: 12.5)).foregroundColor(.black.opacity(0.55))
+                }
+                Spacer()
+                if applied {
+                    Label("In use", systemImage: "checkmark.circle.fill").font(.system(size: 12, weight: .semibold)).foregroundColor(.green)
+                } else if owned {
+                    Button { withAnimation(.easeInOut(duration: 0.25)) { themes.select(theme) }; HapticsManager.shared.success() } label: {
+                        Text(theme.isFree ? "Use default" : "Apply").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundColor(.white)
+                            .padding(.horizontal, 16).padding(.vertical, 7).background(Color.black, in: Capsule())
+                    }.buttonStyle(PressableButtonStyle(scale: 0.95))
+                } else {
+                    buyButton(theme.productID, compact: true)
+                }
+            }
+            HStack(spacing: 14) {
+                ForEach(Array(["spaceai", "spacemagic", "spaceideas", "spacedrive", "spacemusic"].enumerated()), id: \.offset) { _, key in
+                    SpacechatDotFace(key: key, size: 46, animated: false, hue: SpacesAgent.spacechatHue(key) * 360,
+                                     shape: ["circle", "squircle", "star", "drop", "hexagon"][["spaceai", "spacemagic", "spaceideas", "spacedrive", "spacemusic"].firstIndex(of: key) ?? 0],
+                                     theme: theme)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            if !owned { pointsButton(theme.productID, price: StoreGoods.themePoints) }
+        }
+        .padding(16)
+    }
+
+    /// "or 3,000 Points" under an item that can also be paid for with Points.
+    @ViewBuilder
+    private func pointsButton(_ id: String, price: Int) -> some View {
+        if !store.has(id) {
+            let can = player.profile.points >= price
+            Button {
+                guard can else { return }
+                player.profile.points -= price
+                store.unlockWithPoints(id)
+                save()
+                HapticsManager.shared.success()
+            } label: {
+                HStack(spacing: 4) {
+                    Image("Sparkle").renderingMode(.template).resizable().frame(width: 10, height: 10)
+                    Text("Or \(price) Points").lineLimit(1).minimumScaleFactor(0.8)
+                }
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundColor(can ? .black.opacity(0.75) : .black.opacity(0.3))
+            }
+            .buttonStyle(PressableButtonStyle(scale: 0.96))
+            .disabled(!can)
         }
     }
 
@@ -1426,7 +1569,10 @@ struct StoreView: View {
             sectionTitle("UNIVERSES")
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(StoreGoods.paidUniverses) { theme in
-                    tile(name: theme.displayName, id: StoreGoods.universeID(theme)) { UniverseTile(theme: theme) }
+                    VStack(spacing: 4) {
+                        tile(name: theme.displayName, id: StoreGoods.universeID(theme)) { UniverseTile(theme: theme) }
+                        pointsButton(StoreGoods.universeID(theme), price: StoreGoods.universePoints)
+                    }
                 }
             }
             .padding(16)

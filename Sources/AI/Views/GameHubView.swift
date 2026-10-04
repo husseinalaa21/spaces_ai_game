@@ -139,7 +139,11 @@ struct GameHubView: View {
         }
         .onChange(of: scenePhase) { _ in inbox.persist() }
         .onChange(of: inbox.incomingAlertID) { _ in HapticsManager.shared.impact(.light) }
-        .onAppear { store.requiresSignIn = { authState.isGuest } }
+        .onAppear {
+            store.requiresSignIn = { authState.isGuest }
+            // Set before any product load so a purchase redelivered at launch is credited rather than finished silently.
+            store.grantPoints = { points in player.profile.points += points; save() }
+        }
         .task(id: authState.spacechatUsername) {
             inbox.configure(username: authState.spacechatUsername)
             if authState.spacechatUsername != nil { await inbox.refresh() }

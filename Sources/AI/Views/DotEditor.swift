@@ -71,7 +71,7 @@ struct DotEditorView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             shapeTile(nil, label: "Auto")
-                            ForEach(SpacechatDotGeometry.shapeNames, id: \.self) { shapeTile($0, label: StoreGoods.shapeName($0)) }
+                            ForEach(SpacechatDotGeometry.shapeNames, id: \.self) { shapeTile($0, label: $0.capitalized) }
                         }.padding(.vertical, 8).padding(.horizontal, 10)
                     }
                 }
@@ -156,24 +156,12 @@ struct DotEditorView: View {
         }
     }
 
-    /// A shape is free, bought, or the one this dot already has.
-    private func shapeOpen(_ value: String?) -> Bool {
-        guard let value else { return true }
-        return StoreGoods.freeShapes.contains(value) || shop.has(StoreGoods.dotID(value)) || value == agent?.shape
-    }
-
     private func shapeTile(_ value: String?, label: String) -> some View {
-        let open = shapeOpen(value)
-        return Button {
-            if open { withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { shape = value } }
-            else if let value { buying = BuyTarget(id: StoreGoods.dotID(value), title: label + " dot", blurb: "A new design for your dots.") }
-        } label: {
+        Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { shape = value } } label: {
             VStack(spacing: 4) {
                 SpacechatDotFace(key: dotID, size: 52, animated: false, hue: hue * 360, shape: value ?? defaultShape)
-                    .opacity(open ? 1 : 0.5)
                     .overlay(Circle().stroke(shape == value ? Color.primary : .clear, lineWidth: 3).padding(-5))
-                    .overlay { if !open { Image(systemName: "lock.fill").font(.system(size: 14, weight: .bold)).foregroundColor(.primary) } }
-                Text(open ? label : (value.flatMap { shop.price(for: StoreGoods.dotID($0)) } ?? label)).font(.system(size: 10.5, weight: .semibold)).foregroundColor(.secondary)
+                Text(label).font(.system(size: 10.5, weight: .semibold)).foregroundColor(.secondary)
             }
         }.buttonStyle(.plain)
     }
