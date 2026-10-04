@@ -340,7 +340,8 @@ struct ProjectRoomView: View {
     private var lead: SpacesAgent { team.first ?? agents.all[0] }
     /// A copy ("Dots copy 2") looks exactly like the dot it was made from.
     private func agent(named name: String) -> SpacesAgent? {
-        let base = name.range(of: " copy \\d+$", options: .regularExpression).map { String(name[..<$0.lowerBound]) } ?? name
+        // "Pip · Dots copy" is a copy of Dots
+        let base = name.components(separatedBy: " · ").last.map { $0.hasSuffix(" copy") ? String($0.dropLast(5)) : name } ?? name
         return agents.all.first { $0.name == base }
     }
     /// The runner opens its transcript with the whole task as a message from you; that is the brief you already gave, so it is not shown again.
@@ -377,7 +378,7 @@ struct ProjectRoomView: View {
             // every finished copy leaves its own file in the folder
             guard let folder else { return }
             for job in jobs where job.status == .done {
-                _ = try? FolderStore.shared.write(folder, "copies/\(job.parentName.lowercased())-copy-\(job.number).md", content: "# \(job.parentName) copy \(job.number)\n\nJob: \(job.task)\n\n\(job.result)\n", by: job.parentName)
+                _ = try? FolderStore.shared.write(folder, "copies/\(job.name.lowercased())-\(job.parentName.lowercased())-copy.md", content: "# \(job.name), a copy of \(job.parentName)\n\nJob: \(job.task)\n\n\(job.result)\n", by: job.parentName)
             }
         }
         .onChange(of: runner.running) { running in
@@ -696,7 +697,7 @@ struct ProjectRoomView: View {
             try store.write(folder, "README.md", content: "# \(name)\n\n\(idea)\n\nTeam: \(members)\n\n## Result\n\n\(summary)\n", by: lead.name)
             try store.write(folder, "conversation.md", content: chat, by: lead.name)
             for copy in runner.copies {
-                try store.write(folder, "copies/\(copy.parentName.lowercased())-copy-\(copy.number).md", content: "# \(copy.parentName) copy \(copy.number)\n\nJob: \(copy.task)\n\n\(copy.result)\n", by: copy.parentName)
+                try store.write(folder, "copies/\(copy.name.lowercased())-\(copy.parentName.lowercased())-copy.md", content: "# \(copy.name), a copy of \(copy.parentName)\n\nJob: \(copy.task)\n\n\(copy.result)\n", by: copy.parentName)
             }
             filesNote = ""
         } catch {
@@ -864,7 +865,7 @@ struct ProjectUniverse: View {
                 case .failed: Image(systemName: "exclamationmark.circle.fill").font(.system(size: 14)).foregroundColor(.red).background(palette.background, in: Circle())
                 }
             }
-            Text("copy \(job.number)").font(.system(size: 9.5, weight: .bold)).foregroundColor(ink.opacity(0.55))
+            Text(job.name).font(.system(size: 10.5, weight: .heavy, design: .rounded)).foregroundColor(ink.opacity(0.75))
         }
     }
 }

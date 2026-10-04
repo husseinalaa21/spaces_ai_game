@@ -33,6 +33,11 @@ final class AgentRunner: ObservableObject {
         let parentID: String
         let parentName: String
         let number: Int
+        /// The copy's own name (it is a dot of its own while it works).
+        var name: String { Self.names[(number - 1) % Self.names.count] }
+        static let names = ["Pip", "Nova", "Bolt", "Mochi", "Zed", "Luna", "Kiko", "Ember", "Juno", "Rio"]
+        /// How it is named in the chat: "Pip · Dots copy".
+        var label: String { "\(name) · \(parentName) copy" }
         let task: String
         var status: Status = .working
         var result = ""
@@ -200,7 +205,7 @@ final class AgentRunner: ObservableObject {
                             self.copies[i].status = outcome.ok ? .done : .failed
                             self.copies[i].result = outcome.text
                         }
-                        note(AgentMessage(kind: .agent, from: "\(agent.name) copy \(job.number)", to: agent.name, text: outcome.text))
+                        note(AgentMessage(kind: .agent, from: job.label, to: agent.name, text: outcome.text))
                     }
                     return (index, outcome.text)
                 }
