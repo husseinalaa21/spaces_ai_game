@@ -92,7 +92,7 @@ struct SpacechatPhraseView: View {
         ZStack {
             HStack(spacing: 8) {
                 GameLogoMark(size: 30, animated: false)
-                Text("Space Dots and AI")
+                Text("Space - Dots & AI")
                     .font(.system(size: 20, weight: .heavy, design: .rounded))
                     .tracking(0.6)
                     .lineLimit(1)

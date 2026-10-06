@@ -38,7 +38,7 @@ struct SignInView: View {
 
             VStack(spacing: 14) {
                 // Title first, then the logo beneath it.
-                Text("Space Dots and AI")
+                Text("Space - Dots & AI")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .foregroundColor(.black)
                     .lineLimit(1)

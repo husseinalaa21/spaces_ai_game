@@ -137,10 +137,10 @@ struct SpacechatAIView: View {
     }
 
     private static let options: [Option] = [
-        Option(id: "grow", title: "Get started", caption: "Tips for your dots", shape: .star5, hue: 0.60, mode: "Chat", prompt: "How do I get started with Space Dots and AI?"),
+        Option(id: "grow", title: "Get started", caption: "Tips for your dots", shape: .star5, hue: 0.60, mode: "Chat", prompt: "How do I get started with Space - Dots & AI?"),
         Option(id: "dot", title: "Design a dot", caption: "A new look for you", shape: .heart, hue: 0.92, mode: "Dot", prompt: "A glossy ocean-blue dot with silver stars"),
         Option(id: "universe", title: "Design a universe", caption: "Your own world", shape: .hexagon, hue: 0.76, mode: "Universe", prompt: "A sunset world with a warm golden grid"),
-        Option(id: "eat", title: "How teams work", caption: "Dots working together", shape: .flower5, hue: 0.36, mode: "Chat", prompt: "Explain how a team of dots works in Space Dots and AI."),
+        Option(id: "eat", title: "How teams work", caption: "Dots working together", shape: .flower5, hue: 0.36, mode: "Chat", prompt: "Explain how a team of dots works in Space - Dots & AI."),
         Option(id: "shapes", title: "Dot shapes", caption: "What each one is", shape: .diamond, hue: 0.50, mode: "Chat", prompt: "What are the different dot shapes and how do I get them?"),
         Option(id: "challenge", title: "Daily idea", caption: "Something to try", shape: .bolt, hue: 0.10, mode: "Chat", prompt: "Give me an idea to try with my team of dots today.")
     ]
@@ -157,7 +157,7 @@ struct SpacechatAIView: View {
                 .frame(height: 150).padding(.top, 14)
                 Text("What can I help with?")
                     .font(.system(size: 26, weight: .heavy, design: .rounded))
-                Text("Ask Dots anything about Space Dots and AI, or have it design a dot or a universe for you.")
+                Text("Ask Dots anything about Space - Dots & AI, or have it design a dot or a universe for you.")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.black.opacity(0.5))
                     .multilineTextAlignment(.center).padding(.horizontal, 10)

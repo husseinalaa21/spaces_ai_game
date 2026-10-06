@@ -205,7 +205,7 @@ struct SettingsPageView: View {
                         subtitle: "What's stored, and what never leaves your device",
                         url: SpacesLinks.privacy)
                 linkRow(icon: "doc.text", title: "Terms of Use",
-                        subtitle: "The terms covering Space Dots and AI",
+                        subtitle: "The terms covering Space - Dots & AI",
                         url: SpacesLinks.terms)
                 linkRow(icon: "doc.plaintext", title: "License Agreement (EULA)",
                         subtitle: "Apple's standard end user license agreement",
@@ -247,7 +247,7 @@ struct SettingsPageView: View {
     private var footer: some View {
         VStack(spacing: 4) {
             SpacechatMark(size: 22)
-            Text("Space Dots and AI\(versionLabel)")
+            Text("Space - Dots & AI\(versionLabel)")
                 .font(.system(size: 11))
                 .foregroundColor(.black.opacity(0.4))
             Text("Powered by Spacechat")

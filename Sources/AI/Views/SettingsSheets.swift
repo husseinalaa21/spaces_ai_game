@@ -239,7 +239,7 @@ struct AboutSpacechatView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         Link(destination: SpacesLinks.home) {
-                            Label("The Space Dots and AI site", systemImage: "globe")
+                            Label("The Space - Dots & AI site", systemImage: "globe")
                         }
                         Link(destination: SpacesLinks.spacechat) {
                             Label("spacechat.app", systemImage: "network")
