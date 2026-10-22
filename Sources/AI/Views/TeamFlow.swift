@@ -64,10 +64,9 @@ struct TeamLobbyView: View {
 
     @State private var shown = 0
     @State private var picked: [String] = []
-    @State private var offset = CGSize.zero
-    @State private var dragBase: CGSize?
-    @State private var scale: CGFloat = 0.62
-    @State private var pinchBase: CGFloat?
+    @State private var viewport = DotMapViewport(scale: 0.62, limits: 0.25...2.2)
+    private var offset: CGSize { viewport.offset }
+    private var scale: CGFloat { viewport.scale }
     @State private var touched = false
     @State private var showMembers = false
     @ObservedObject private var shop = StoreManager.shared
@@ -98,8 +97,7 @@ struct TeamLobbyView: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
             .contentShape(Rectangle())
-            .simultaneousGesture(drag)
-            .simultaneousGesture(pinch)
+            .modifier(DotMapNavigation(viewport: $viewport, size: geo.size, coordinateSpace: "team-map", onTouch: { touched = true }))
             .overlay(alignment: .top) { header }
             .overlay(alignment: .bottom) { trayBar }
             .overlay(alignment: .bottomTrailing) { zoomButtons }
@@ -208,7 +206,7 @@ struct TeamLobbyView: View {
     /// The workspace's own dots and stars, drifting a little slower than the map.
     private func stars(_ size: CGSize) -> some View {
         Canvas { ctx, s in
-            let step: CGFloat = 44 * max(0.6, min(1.5, scale))
+            let step: CGFloat = viewport.gridSpacing
             let cx = s.width / 2 + offset.width, cy = s.height / 2 + offset.height
             var x = cx.truncatingRemainder(dividingBy: step) - step
             while x < s.width + step {
@@ -257,11 +255,11 @@ struct TeamLobbyView: View {
     private var zoomButtons: some View {
         VStack(spacing: 8) {
             ForEach(Array([("plus", 1.3), ("minus", 1 / 1.3)].enumerated()), id: \.offset) { _, step in
-                Button { HapticsManager.shared.impact(.light); withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { scale = min(2.2, max(0.25, scale * CGFloat(step.1))) } } label: {
+                Button { HapticsManager.shared.impact(.light); viewport.zoom(to: scale * CGFloat(step.1)) } label: {
                     Image(systemName: step.0).font(.system(size: 15, weight: .bold)).foregroundColor(ink).frame(width: 40, height: 40).background(.ultraThinMaterial, in: Circle())
                 }.buttonStyle(.plain).accessibilityLabel(step.0 == "plus" ? "Zoom in" : "Zoom out")
             }
-            Button { HapticsManager.shared.impact(.light); withAnimation(.spring(response: 0.5, dampingFraction: 0.84)) { offset = .zero; scale = 0.62 } } label: {
+            Button { HapticsManager.shared.impact(.light); viewport.reset(scale: 0.62) } label: {
                 Image(systemName: "scope").font(.system(size: 15, weight: .bold)).foregroundColor(ink).frame(width: 40, height: 40).background(.ultraThinMaterial, in: Circle())
             }.buttonStyle(.plain).accessibilityLabel("Back to the middle")
         }
@@ -292,29 +290,6 @@ struct TeamLobbyView: View {
         .background(.ultraThinMaterial)
     }
 
-    // MARK: moving about
-
-    private var drag: some Gesture {
-        DragGesture(minimumDistance: 6)
-            .onChanged { v in
-                if pinchBase != nil { return }
-                if dragBase == nil { dragBase = offset; touched = true }
-                offset = CGSize(width: (dragBase?.width ?? 0) + v.translation.width, height: (dragBase?.height ?? 0) + v.translation.height)
-            }
-            .onEnded { v in
-                guard dragBase != nil else { return }
-                let base = dragBase ?? offset; dragBase = nil
-                withAnimation(.easeOut(duration: 0.5)) {
-                    offset = CGSize(width: base.width + v.predictedEndTranslation.width * 0.7, height: base.height + v.predictedEndTranslation.height * 0.7)
-                }
-            }
-    }
-
-    private var pinch: some Gesture {
-        MagnificationGesture()
-            .onChanged { v in if pinchBase == nil { pinchBase = scale; touched = true }; scale = min(2.2, max(0.25, (pinchBase ?? scale) * v)) }
-            .onEnded { _ in pinchBase = nil }
-    }
 }
 
 // MARK: - The room
@@ -925,10 +900,9 @@ struct ProjectUniverse: View {
     var onDeleteCopy: (UUID) -> Void = { _ in }
     let agentFor: (String) -> SpacesAgent?
 
-    @State private var offset = CGSize.zero
-    @State private var dragBase: CGSize?
-    @State private var scale: CGFloat = 0.85
-    @State private var pinchBase: CGFloat?
+    @State private var viewport = DotMapViewport(scale: 0.85, limits: 0.3...2.0)
+    private var offset: CGSize { viewport.offset }
+    private var scale: CGFloat { viewport.scale }
     // holding a dot
     @State private var held: String?
     @State private var heldPoint = CGPoint.zero
@@ -1037,18 +1011,9 @@ struct ProjectUniverse: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
             .contentShape(Rectangle())
-            .simultaneousGesture(DragGesture(minimumDistance: 6).onChanged { v in
-                if pinchBase != nil || held != nil { return }
-                if dragBase == nil { dragBase = offset }
-                offset = CGSize(width: (dragBase?.width ?? 0) + v.translation.width, height: (dragBase?.height ?? 0) + v.translation.height)
-            }.onEnded { _ in dragBase = nil })
-            .simultaneousGesture(MagnificationGesture().onChanged { v in
-                if held != nil { return }
-                if pinchBase == nil { pinchBase = scale }
-                scale = min(2, max(0.3, (pinchBase ?? scale) * v))
-            }.onEnded { _ in pinchBase = nil })
+            .modifier(DotMapNavigation(viewport: $viewport, size: geo.size, coordinateSpace: "universe", blocked: held != nil, allowsDotDragging: true))
             .overlay(alignment: .topTrailing) {
-                Button { withAnimation(.spring(response: 0.5, dampingFraction: 0.84)) { offset = .zero; scale = 0.85 } } label: {
+                Button { viewport.reset(scale: 0.85) } label: {
                     Image(systemName: "scope").font(.system(size: 14, weight: .bold)).foregroundColor(ink).frame(width: 36, height: 36).background(.ultraThinMaterial, in: Circle())
                 }.buttonStyle(.plain).padding(12).accessibilityLabel("Back to the middle")
             }
@@ -1177,7 +1142,7 @@ struct ProjectUniverse: View {
 
     private var backdrop: some View {
         Canvas { ctx, s in
-            let step: CGFloat = 44 * max(0.6, min(1.5, scale))
+            let step: CGFloat = viewport.gridSpacing
             let cx = s.width / 2 + offset.width, cy = s.height / 2 + offset.height
             var x = cx.truncatingRemainder(dividingBy: step) - step
             while x < s.width + step {

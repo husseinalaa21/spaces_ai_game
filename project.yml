@@ -53,8 +53,8 @@ targets:
         DEVELOPMENT_TEAM: SVDD93966K
         PRODUCT_NAME: "Space - Dots & AI"
         CODE_SIGN_STYLE: Automatic
-        MARKETING_VERSION: "3.5"
-        CURRENT_PROJECT_VERSION: "3"
+        MARKETING_VERSION: "4.0"
+        CURRENT_PROJECT_VERSION: "4"
         VERSIONING_SYSTEM: apple-generic
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

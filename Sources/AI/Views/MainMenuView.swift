@@ -1297,9 +1297,9 @@ private struct SignInRequiredSheet: View {
                 .padding(.horizontal, 30)
 
             SignInWithAppleButton(.signIn) { request in
-                request.requestedScopes = [.fullName]
+                request.requestedScopes = [.email]
             } onCompletion: { result in
-                if authState.handleAppleSignIn(result) { dismiss() }
+                Task { if await authState.handleAppleSignIn(result) { dismiss() } }
             }
             .signInWithAppleButtonStyle(.black)
             .frame(width: 260, height: 50)

@@ -113,9 +113,14 @@ final class ApprovalCenter: ObservableObject {
         default: break
         }
         let request = ApprovalRequest(kind: kind, agent: agent, summary: summary, detail: detail)
-        queue.append(request)
-        let decision = await withCheckedContinuation { (continuation: CheckedContinuation<ApprovalDecision, Never>) in
-            waiting[request.id] = continuation
+        let decision = await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<ApprovalDecision, Never>) in
+                guard !Task.isCancelled else { continuation.resume(returning: .deny); return }
+                waiting[request.id] = continuation
+                queue.append(request)
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.resolve(request.id, .deny) }
         }
         switch decision {
         case .deny: return false

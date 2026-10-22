@@ -66,9 +66,15 @@ enum SpacechatService {
     /// Spacechat client renews an expired session.
     static func renewSession() async -> String? {
         if let renewal { return await renewal.value }
+        let owner = UserDefaults.standard.string(forKey: "ai_spacechat_username")
+        let scope = UserDefaults.standard.string(forKey: "ai_account_scope")
+        let previousSession = SpacechatAuth.storedSession()
         let task = Task<String?, Never> {
             guard let phrase = SpacechatAuth.storedPhrase(),
                   let account = try? await SpacechatAuth.login(phrase: phrase) else { return nil }
+            guard owner == UserDefaults.standard.string(forKey: "ai_spacechat_username"),
+                  scope == UserDefaults.standard.string(forKey: "ai_account_scope"),
+                  previousSession == SpacechatAuth.storedSession() else { return nil }
             SpacechatAuth.storeSession(account.session)
             return account.session
         }
@@ -79,11 +85,14 @@ enum SpacechatService {
     }
 
     static func post(_ path: String, body: [String: Any] = [:], timeout: TimeInterval = 30, retryOnExpiry: Bool = true) async throws -> [String: Any] {
+        let owner = UserDefaults.standard.string(forKey: "ai_spacechat_username")
+        let scope = UserDefaults.standard.string(forKey: "ai_account_scope")
         var session = SpacechatAuth.storedSession() ?? ""
         if session.isEmpty {
             guard retryOnExpiry, let fresh = await renewSession() else { throw ServiceError.notSignedIn }
             session = fresh
         }
+        guard owner == UserDefaults.standard.string(forKey: "ai_spacechat_username"), scope == UserDefaults.standard.string(forKey: "ai_account_scope") else { throw CancellationError() }
         var request = URLRequest(url: SpacechatAuth.baseURL.appendingPathComponent("api").appendingPathComponent(path))
         request.httpMethod = "POST"
         request.timeoutInterval = timeout
@@ -97,6 +106,7 @@ enum SpacechatService {
             throw ServiceError.unavailable("Couldn't reach Spacechat. Check your connection and try again.")
         }
         try Task.checkCancellation()
+        guard owner == UserDefaults.standard.string(forKey: "ai_spacechat_username"), scope == UserDefaults.standard.string(forKey: "ai_account_scope") else { throw CancellationError() }
         guard let http = response as? HTTPURLResponse else { throw ServiceError.unavailable("") }
         let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? nil
         if http.statusCode == 404 { throw ServiceError.missing }
@@ -292,6 +302,13 @@ final class SpacesInbox: ObservableObject {
             let data = try JSONEncoder().encode(Saved(conversations: conversations, deleted: deleted, filter: filter, drafts: drafts))
             try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         } catch { self.error = "Messages couldn't be saved on this device. Check available storage." }
+    }
+
+    /// Used only after the server confirms explicit account deletion.
+    static func removeLocalAccountData(username: String, storageDirectory: URL? = nil) {
+        let local = SpacesInbox(storageDirectory: storageDirectory)
+        local.configure(username: username)
+        if let url = local.fileURL { try? FileManager.default.removeItem(at: url) }
     }
 
     func report(_ error: Error) {

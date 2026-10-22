@@ -1,24 +1,56 @@
 import Foundation
+import CryptoKit
 
-/// Local persistence for `PlayerProfile` (§102: "Persist... progression").
-///
-/// This is a placeholder for cloud/server persistence — the spec calls for
-/// server-backed saves once accounts exist (§57 User model), but a local
-/// JSON file lets the MVP core loop be fully playable and durable offline
-/// today. Swapping this for a network-backed implementation later shouldn't
-/// require touching `GameEngine` or the views, since they only see
-/// `scheduleSave` / `load`.
+/// Account-scoped device persistence, with atomic writes and a captured file
+/// destination so a delayed save cannot cross an account switch. Cloud saves
+/// are owned by SpacechatSync and do not replace local/offline persistence.
 final class SaveManager {
-    private let fileURL: URL
+    private var fileURL: URL
+    private let pathLock = NSLock()
     private var pendingSaveWorkItem: DispatchWorkItem?
     private let queue = DispatchQueue(label: "ai.game.save", qos: .utility)
 
-    init(filename: String = "ai_player_profile.json") {
-        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        fileURL = dir.appendingPathComponent(filename)
+    init(filename: String = "ai_player_profile.json", accountScope: String? = nil, storageDirectory: URL? = nil) {
+        let dir = storageDirectory ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let legacy = dir.appendingPathComponent(filename)
+        fileURL = accountScope.map { dir.appendingPathComponent(Self.filename(for: $0)) } ?? legacy
+        // Migrate only to the account that owned this installation before
+        // account-scoped files existed; never copy it into later accounts.
+        if accountScope != nil, !FileManager.default.fileExists(atPath: fileURL.path),
+           FileManager.default.fileExists(atPath: legacy.path) {
+            try? FileManager.default.moveItem(at: legacy, to: fileURL)
+        }
+    }
+
+    static func filename(for scope: String) -> String {
+        let hash = SHA256.hash(data: Data(scope.utf8)).map { String(format: "%02x", $0) }.joined()
+        return "ai_player_" + hash + ".json"
+    }
+
+    func switchAccount(to scope: String, migrateCurrent: Bool = false) {
+        pendingSaveWorkItem?.cancel()
+        pathLock.lock(); defer { pathLock.unlock() }
+        let next = fileURL.deletingLastPathComponent().appendingPathComponent(Self.filename(for: scope))
+        if migrateCurrent, !FileManager.default.fileExists(atPath: next.path), FileManager.default.fileExists(atPath: fileURL.path) {
+            try? FileManager.default.moveItem(at: fileURL, to: next)
+        }
+        fileURL = next
+    }
+
+    func removeCurrentSave() {
+        pendingSaveWorkItem?.cancel()
+        let target = destination
+        queue.sync { try? FileManager.default.removeItem(at: target) }
+    }
+
+    private var destination: URL {
+        pathLock.lock(); defer { pathLock.unlock() }
+        return fileURL
     }
 
     func load() -> PlayerProfile {
+        let fileURL = destination
         guard let data = try? Data(contentsOf: fileURL) else {
             return PlayerProfile()
         }
@@ -39,8 +71,10 @@ final class SaveManager {
     /// Debounced save so rapid eating doesn't hit disk every frame.
     func scheduleSave(_ profile: PlayerProfile) {
         pendingSaveWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.saveNow(profile)
+        let target = destination
+        let work = DispatchWorkItem {
+            guard let data = try? JSONEncoder().encode(profile) else { return }
+            try? data.write(to: target, options: .atomic)
         }
         pendingSaveWorkItem = work
         queue.asyncAfter(deadline: .now() + 0.6, execute: work)
@@ -48,6 +82,6 @@ final class SaveManager {
 
     func saveNow(_ profile: PlayerProfile) {
         guard let data = try? JSONEncoder().encode(profile) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        try? data.write(to: destination, options: .atomic)
     }
 }

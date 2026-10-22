@@ -18,6 +18,7 @@ struct SettingsPageView: View {
 
     @State private var showSignOutConfirm = false
     @State private var showPhraseSheet = false
+    @State private var showAccount = false
     @State private var showPurchases = false
     @State private var showAbout = false
     @State private var showPaywall = false
@@ -47,6 +48,9 @@ struct SettingsPageView: View {
         }
         .background(Color(white: 0.97).ignoresSafeArea())
         .sheet(isPresented: $showPhraseSheet) { RecoveryPhraseSheet() }
+        .sheet(isPresented: $showAccount) {
+            SharedAccountSettingsView(player: player, authState: authState, sync: sync, save: save)
+        }
         .sheet(isPresented: $showPurchases) { PurchaseHistoryView(store: store) }
         .sheet(isPresented: $showAbout) { AboutSpacechatView() }
         .sheet(isPresented: $showPaywall) {
@@ -91,8 +95,10 @@ struct SettingsPageView: View {
                     subtitle: accountDetail)
 
             if authState.spacechatUsername != nil {
-                // Only meaningful for a phrase account — an Apple or guest
-                // session has no phrase to show.
+                tapRow(icon: "person.crop.circle", title: "Account & profile",
+                       subtitle: "Edit your shared Spacechat profile, storage and login options") { showAccount = true }
+
+                // Both phrase and provider accounts share these settings.
                 tapRow(icon: "key.fill",
                        title: "Recovery phrase",
                        subtitle: "View, copy, or save the phrase for this account") {
@@ -100,9 +106,9 @@ struct SettingsPageView: View {
                 }
             }
 
-            infoRow(icon: "icloud",
-                    title: "Cloud save",
-                    subtitle: cloudDetail)
+            if !authState.isGuest {
+                tapRow(icon: "icloud", title: "Storage & database", subtitle: cloudDetail) { showAccount = true }
+            }
         }
     }
 

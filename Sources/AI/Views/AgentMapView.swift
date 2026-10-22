@@ -15,10 +15,9 @@ struct AgentMapView: View {
     let onLogin: () -> Void
 
     @StateObject private var runner = TopicRunner()
-    @State private var offset = CGSize(width: 0, height: 40)
-    @State private var dragBase: CGSize?
-    @State private var scale: CGFloat = 0.62
-    @State private var pinchBase: CGFloat?
+    @State private var viewport = DotMapViewport(offset: CGSize(width: 0, height: 40), scale: 0.62, limits: 0.12...2.2)
+    private var offset: CGSize { viewport.offset }
+    private var scale: CGFloat { viewport.scale }
     @State private var touched = false
     @State private var chatting: SpacesAgent?
     @State private var showNew = false
@@ -51,8 +50,6 @@ struct AgentMapView: View {
     private static let dotSize: CGFloat = 108
     private static let nodeSize: CGFloat = 76
     private static let cardWidth: CGFloat = 220
-    private static let minScale: CGFloat = 0.12
-    private static let maxScale: CGFloat = 2.2
 
     // MARK: - Where things sit
 
@@ -142,8 +139,7 @@ struct AgentMapView: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
             .contentShape(Rectangle())
-            .simultaneousGesture(dragGesture)
-            .simultaneousGesture(magnifyGesture)
+            .modifier(DotMapNavigation(viewport: $viewport, size: geo.size, coordinateSpace: "agent-map", onTouch: { touched = true }))
             .overlay(alignment: .top) { topBar }
             .overlay(alignment: .bottom) { bottomBar(scene) }
             .overlay(alignment: .bottomTrailing) { zoomControls }
@@ -249,7 +245,7 @@ struct AgentMapView: View {
 
     private func grid(size: CGSize) -> some View {
         Canvas { ctx, s in
-            let step = 44 * max(0.5, min(1.6, scale))
+            let step = viewport.gridSpacing
             let cx = s.width / 2 + offset.width, cy = s.height / 2 + offset.height
             let dot = palette.line.opacity(dark ? 0.55 : 0.8)
             var x = cx.truncatingRemainder(dividingBy: step) - step
@@ -494,7 +490,7 @@ struct AgentMapView: View {
     private var zoomControls: some View {
         VStack(spacing: 8) {
             ForEach(Array([("plus", 1.35), ("minus", 1 / 1.35)].enumerated()), id: \.offset) { _, step in
-                Button { HapticsManager.shared.impact(.light); withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { zoom(to: scale * CGFloat(step.1)) } } label: {
+                Button { HapticsManager.shared.impact(.light); viewport.zoom(to: scale * CGFloat(step.1)) } label: {
                     Image(systemName: step.0).font(.system(size: 15, weight: .bold)).foregroundColor(ink).frame(width: 40, height: 40)
                         .background(.ultraThinMaterial, in: Circle()).overlay(Circle().stroke(ink.opacity(0.08)))
                 }.buttonStyle(.plain).accessibilityLabel(step.0 == "plus" ? "Zoom in" : "Zoom out")
@@ -509,52 +505,14 @@ struct AgentMapView: View {
 
     // MARK: - Moving about
 
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 6)
-            .onChanged { value in
-                if pinchBase != nil { return }
-                if dragBase == nil { dragBase = offset; touched = true }
-                offset = CGSize(width: (dragBase?.width ?? 0) + value.translation.width, height: (dragBase?.height ?? 0) + value.translation.height)
-            }
-            .onEnded { value in
-                guard dragBase != nil else { return }
-                let base = dragBase ?? offset
-                dragBase = nil
-                let glide = CGSize(width: (value.predictedEndTranslation.width - value.translation.width) * 0.6, height: (value.predictedEndTranslation.height - value.translation.height) * 0.6)
-                withAnimation(.easeOut(duration: 0.55)) {
-                    offset = CGSize(width: base.width + value.translation.width + glide.width, height: base.height + value.translation.height + glide.height)
-                }
-            }
-    }
-
-    private var magnifyGesture: some Gesture {
-        MagnificationGesture()
-            .onChanged { value in
-                if pinchBase == nil { pinchBase = scale; touched = true }
-                zoom(to: (pinchBase ?? scale) * value)
-            }
-            .onEnded { _ in pinchBase = nil }
-    }
-
-    private func zoom(to target: CGFloat) {
-        let next = min(Self.maxScale, max(Self.minScale, target))
-        let ratio = next / scale
-        offset = CGSize(width: offset.width * ratio, height: offset.height * ratio)
-        scale = next
-    }
-
     private func recenter() {
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.84)) { offset = CGSize(width: 0, height: 40); scale = 0.62 }
+        viewport.reset(offset: CGSize(width: 0, height: 40), scale: 0.62)
     }
 
     private func focusOnTopic(_ id: UUID) {
-        let scene = layout
-        guard let card = scene.topicCards.first(where: { $0.topic.id == id }) else { return }
+        guard let card = layout.topicCards.first(where: { $0.topic.id == id }) else { return }
         let target = CGPoint(x: card.center.x, y: card.center.y + 160)
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.86)) {
-            scale = 0.85
-            offset = CGSize(width: -target.x * 0.85, height: -target.y * 0.85)
-        }
+        viewport.reset(offset: CGSize(width: -target.x * 0.85, height: -target.y * 0.85), scale: 0.85)
     }
 
     private func handOver(topic id: UUID, from node: TopicNode, to agent: SpacesAgent) {
@@ -697,6 +655,71 @@ private struct NodeSheet: View {
         case .running: ProgressView()
         case .done: Label("Done", systemImage: "checkmark.circle.fill").font(.system(size: 12, weight: .bold)).foregroundColor(.green)
         case .failed: Label("Failed", systemImage: "exclamationmark.circle.fill").font(.system(size: 12, weight: .bold)).foregroundColor(.red)
+        }
+    }
+}
+
+// Keep navigation attached to the fixed viewport, outside the transformed world.
+struct DotMapNavigation: ViewModifier {
+    @Binding var viewport: DotMapViewport
+    let size: CGSize
+    let coordinateSpace: String
+    var blocked = false
+    var allowsDotDragging = false
+    var onTouch: () -> Void = {}
+    @GestureState private var panning = false
+    @GestureState private var pinching = false
+
+    func body(content: Content) -> some View {
+        magnifiable(navigable(content.coordinateSpace(name: coordinateSpace)))
+            .onChange(of: panning) { active in if !active { viewport.endPan() } }
+            .onChange(of: pinching) { active in if !active { viewport.endPinch() } }
+            .onChange(of: blocked) { value in if value { viewport.suspendPan() } }
+            .onDisappear { viewport.cancelGestures() }
+    }
+
+    private var panGesture: some Gesture {
+        DragGesture(minimumDistance: 6, coordinateSpace: .named(coordinateSpace))
+            .updating($panning) { _, active, _ in active = true }
+            .onChanged { value in
+                guard !blocked else { return }
+                onTouch()
+                viewport.pan(to: value.translation)
+            }
+            .onEnded { _ in viewport.endPan() }
+    }
+
+    @ViewBuilder private func navigable<V: View>(_ content: V) -> some View {
+        if allowsDotDragging {
+            // The project world's long-press gesture owns individual dot placement.
+            content.simultaneousGesture(panGesture)
+        } else {
+            // A recognized drag must cancel a moving button's pending tap.
+            content.highPriorityGesture(panGesture)
+        }
+    }
+
+    @ViewBuilder private func magnifiable<V: View>(_ content: V) -> some View {
+        if #available(iOS 17.0, *) {
+            content.highPriorityGesture(MagnifyGesture()
+                .updating($pinching) { _, active, _ in active = true }
+                .onChanged { value in
+                    guard !blocked else { return }
+                    onTouch()
+                    let anchor = CGPoint(x: (value.startAnchor.x - 0.5) * size.width,
+                                         y: (value.startAnchor.y - 0.5) * size.height)
+                    viewport.pinch(to: value.magnification, anchor: anchor)
+                }
+                .onEnded { _ in viewport.endPinch() })
+        } else {
+            content.highPriorityGesture(MagnificationGesture()
+                .updating($pinching) { _, active, _ in active = true }
+                .onChanged { value in
+                    guard !blocked else { return }
+                    onTouch()
+                    viewport.pinch(to: value, anchor: .zero)
+                }
+                .onEnded { _ in viewport.endPinch() })
         }
     }
 }

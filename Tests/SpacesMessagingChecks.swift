@@ -12,6 +12,21 @@ struct SpacechatAuth {
     static let baseURL = URL(string: "https://spaces-tests.invalid")!
     static var session: String? = "test-session"
     static func storedSession() -> String? { session }
+    static func storedPhrase() -> String? { nil }
+    struct Account { let session: String }
+    static func login(phrase: String) async throws -> Account { throw SpacechatService.ServiceError.notSignedIn }
+    static func storeSession(_ value: String) { session = value }
+}
+
+// These game-only collaborators are outside this messaging suite; invoking them is a fixture error.
+@MainActor final class FriendsStore {
+    static let shared = FriendsStore()
+    func facts(for username: String) -> [String] { preconditionFailure("Unexpected game-agent memory call in messaging fixture") }
+    func remember(_ facts: [String], for username: String) { preconditionFailure("Unexpected game-agent memory mutation") }
+}
+enum DotChatDirector {
+    static func reply(as name: String, to text: String, history: [String] = [], room: String = "", memory: [String] = []) async -> String { preconditionFailure("Unexpected game-agent model call") }
+    static func learn(from lines: [String]) async -> [String] { preconditionFailure("Unexpected game-agent learning call") }
 }
 
 final class FixtureProtocol: URLProtocol {

@@ -24,6 +24,8 @@ struct SpacechatPhraseView: View {
     private enum PhraseMode {
         case type
         case create
+        case recover
+        case ticket
     }
 
     @State private var mode: PhraseMode?
@@ -34,13 +36,23 @@ struct SpacechatPhraseView: View {
     @State private var showExporter = false
     @State private var copied = false
     @State private var localError: String?
+    @State private var importedBackup: [String: Any]?
+    @State private var showRecoveryOptions = false
+    @State private var referenceID = ""
+    @State private var recoveryName = ""
+    @State private var recoveryEmail = ""
+    @State private var recoveryMessage = ""
+    @State private var ticketID = ""
+    @State private var confirmRecovery = false
+
+    private var createsPhrase: Bool { mode == .create || mode == .recover }
     /// Create mode starts empty with Generate / Type buttons inside the field; typing instead hides them.
     @State private var manualEntry = false
     @State private var generatedPulse = false
     @FocusState private var phraseFocused: Bool
 
     private var wordCount: Int { SpacechatAuth.wordCount(phrase) }
-    private var canSubmit: Bool { SpacechatAuth.isValid(phrase) && !isWorking }
+    private var canSubmit: Bool { SpacechatAuth.isValid(phrase) && !isWorking && (mode != .recover || !referenceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,8 +65,10 @@ struct SpacechatPhraseView: View {
                         .padding(.top, 8)
                         .accessibilityAddTraits(.isHeader)
 
-                    if mode == nil {
-                        chooser
+                    if mode == .ticket {
+                        recoveryTicket
+                    } else if mode == nil {
+                        if showRecoveryOptions { recoveryOptions } else { chooser }
                     } else {
                         editor
                     }
@@ -72,11 +86,15 @@ struct SpacechatPhraseView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(white: 0.97).ignoresSafeArea())
         .preferredColorScheme(.light)
+        .interactiveDismissDisabled(isWorking)
+        .confirmationDialog("Replace this account's recovery phrase?", isPresented: $confirmRecovery, titleVisibility: .visible) {
+            Button("Recover account", role: .destructive) { submit(confirmed: true) }
+        } message: { Text("The old phrase will stop working in both apps. Save the new words before continuing.") }
         // Attached at this level, not inside a branch: a modifier on a
         // view that disappears when `mode` changes never gets to run its
         // completion handler.
         .fileImporter(isPresented: $showImporter,
-                      allowedContentTypes: [.plainText, .text],
+                      allowedContentTypes: [.plainText, .text, .json],
                       allowsMultipleSelection: false) { result in
             importPhrase(result)
         }
@@ -99,8 +117,8 @@ struct SpacechatPhraseView: View {
                     .minimumScaleFactor(0.6)
             }
             HStack {
-                Button(mode == nil ? "Cancel" : "Back") {
-                    if mode == nil { dismiss() } else { backToChooser() }
+                Button(mode == nil && !showRecoveryOptions ? "Cancel" : "Back") {
+                    if mode == nil && !showRecoveryOptions { dismiss() } else { backToChooser() }
                 }
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(.black.opacity(0.75))
@@ -118,6 +136,8 @@ struct SpacechatPhraseView: View {
         case .none: return "Spacechat Phrase"
         case .type: return "Enter Your Phrase"
         case .create: return "New Phrase"
+        case .recover: return "Recover Account"
+        case .ticket: return "Recovery Request"
         }
     }
 
@@ -134,7 +154,7 @@ struct SpacechatPhraseView: View {
             }
 
             choiceButton(title: "Upload Existing Phrase",
-                         subtitle: "Pick a saved phrase file",
+                         subtitle: "Pick a saved phrase or account database file",
                          icon: "square.and.arrow.up") {
                 showImporter = true
             }
@@ -164,37 +184,96 @@ struct SpacechatPhraseView: View {
                 mode = .create
                 HapticsManager.shared.impact(.light)
             }
+            Button("Did you forget your phrase?") { showRecoveryOptions = true }
+                .font(.system(size: 14, weight: .medium)).foregroundColor(.secondary)
+        }
+    }
+
+    private var recoveryOptions: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Recover your Spacechat account").font(.headline)
+            Text("Your reference ID is in Account settings or your saved account information.")
+                .font(.subheadline).foregroundColor(.secondary)
+            choiceButton(title: "I have my reference ID", subtitle: "Recover this account with a new phrase", icon: "key.fill") {
+                phrase = ""; mode = .recover; revealed = true; manualEntry = false
+            }
+            choiceButton(title: "I don't have my reference ID", subtitle: "Send an account recovery request", icon: "questionmark.circle") { mode = .ticket }
+        }
+    }
+
+    private var recoveryTicket: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if !ticketID.isEmpty {
+                Text("Request received").font(.headline)
+                Text("Your ticket is \(ticketID). Spacechat will follow up by email after reviewing it.")
+            } else {
+                TextField("Full name", text: $recoveryName).textFieldStyle(.roundedBorder)
+                TextField("Email address", text: $recoveryEmail).textFieldStyle(.roundedBorder)
+                    .keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
+                TextField("What do you remember about your account?", text: $recoveryMessage, axis: .vertical)
+                    .lineLimit(4...8).textFieldStyle(.roundedBorder)
+                Text("Never include a recovery phrase in this request.").font(.footnote).foregroundColor(.secondary)
+                Button(isWorking ? "Sending…" : "Send recovery request") {
+                    isWorking = true; localError = nil
+                    Task {
+                        defer { isWorking = false }
+                        do {
+                            let response = try await SpacechatAuth.request("support/inquiry", body: ["name": recoveryName, "email": recoveryEmail, "message": recoveryMessage, "subject": "Account recovery request", "category": "account_recovery", "page": "/login"])
+                            ticketID = response["ticketId"] as? String ?? "received"
+                        } catch { localError = error.localizedDescription }
+                    }
+                }
+                .disabled(isWorking || recoveryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !recoveryEmail.contains("@") || recoveryMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
         }
     }
 
     private func choiceButton(title: String, subtitle: String, icon: String,
                               prominent: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
+        let blue = Color(red: 0.110, green: 0.373, blue: 0.769)
+        let tint = icon == "square.and.arrow.up" ? Color(red: 0.486, green: 0.361, blue: 1) : blue
+        return Button(action: action) {
+            HStack(spacing: 14) {
                 Image(systemName: icon)
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 26)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(subtitle).font(.system(size: 12)).opacity(0.65)
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(tint, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.headline)
+                    Text(subtitle).font(.subheadline).foregroundColor(.secondary)
                 }
-                Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).opacity(0.4)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(prominent ? blue : Color.black.opacity(0.4))
+                    .accessibilityHidden(true)
             }
-            .foregroundColor(prominent ? .white : .black)
-            .padding(14)
-            .frame(maxWidth: .infinity)
-            .background(prominent ? Color.black : Color.white,
-                        in: RoundedRectangle(cornerRadius: 14))
+            .foregroundColor(.black)
+            .padding(.horizontal, 16).padding(.vertical, 14)
+            .frame(maxWidth: .infinity, minHeight: 76)
+            .background(prominent ? blue.opacity(0.10) : Color(red: 0.945, green: 0.953, blue: 0.965),
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(PressableButtonStyle(scale: 0.98))
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - 2. Editor (.type and .create)
 
     private var editor: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(mode == .create
+            if mode == .recover {
+                TextField("Reference ID", text: $referenceID).textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.characters).autocorrectionDisabled()
+                Text("Generate and keep a new phrase. Recovery replaces the old phrase for this shared account.")
+                    .font(.footnote).foregroundColor(.secondary)
+            }
+            Text(createsPhrase
                  ? "Generate 12 words for your new account and save them somewhere safe before continuing."
                  : "Enter the 12 to 18 words for your account.")
                 .font(.system(size: 13))
@@ -202,7 +281,7 @@ struct SpacechatPhraseView: View {
 
             phraseField
 
-            if mode == .create && !phrase.isEmpty {
+            if createsPhrase && !phrase.isEmpty {
                 createActions
 
                 Label("Nobody can recover this phrase for you, and anyone who has it can sign in as you. Spacechat will never ask you for it.",
@@ -257,7 +336,7 @@ struct SpacechatPhraseView: View {
         return words.enumerated().map { i, word in (i, word, (list.firstIndex(of: word) ?? i) + 1) }
     }
 
-    private var showsGenerate: Bool { mode == .create && phrase.isEmpty && !manualEntry }
+    private var showsGenerate: Bool { createsPhrase && phrase.isEmpty && !manualEntry }
     private var showsTiles: Bool { !phraseFocused && !tokens.isEmpty }
 
     private func generate() {
@@ -298,6 +377,8 @@ struct SpacechatPhraseView: View {
                 .padding(18)
                 .frame(maxWidth: .infinity, minHeight: 188, maxHeight: 188, alignment: .topLeading)
                 .opacity(showsTiles ? 0 : 1)
+                .accessibilityHidden(showsTiles)
+                .privacySensitive()
                 .onAppear {
                     // Open ready to type or paste, without a second tap.
                     if mode == .type { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { phraseFocused = true } }
@@ -393,12 +474,12 @@ struct SpacechatPhraseView: View {
     }
 
     private var continueButton: some View {
-        Button(action: submit) {
+        Button { submit() } label: {
             Group {
                 if isWorking {
                     ProgressView().tint(.white)
                 } else {
-                    Text(mode == .create ? "Create & Continue" : "Continue")
+                    Text(mode == .recover ? "Recover account" : (mode == .create ? "Create & Continue" : "Continue"))
                 }
             }
             .font(.system(size: 16, weight: .semibold, design: .rounded))
@@ -416,6 +497,9 @@ struct SpacechatPhraseView: View {
 
     private func backToChooser() {
         mode = nil
+        importedBackup = nil
+        showRecoveryOptions = false
+        referenceID = ""
         phrase = ""
         revealed = false
         manualEntry = false
@@ -442,12 +526,12 @@ struct SpacechatPhraseView: View {
             // reading it without this returns nothing, with no error.
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
+            guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 4_000_000,
+                  let contents = try? String(contentsOf: url, encoding: .utf8) else {
                 localError = "Couldn't read that file."
                 return
             }
-            let candidate = SpacechatAuth.normalize(contents)
-            guard SpacechatAuth.isValid(candidate) else {
+            guard let candidate = SpacechatBackup.phrase(from: contents) else {
                 localError = "That file doesn't contain a 12 to 18 word phrase."
                 return
             }
@@ -455,6 +539,7 @@ struct SpacechatPhraseView: View {
             // client — so an uploaded phrase can still be checked or fixed
             // before it's submitted.
             phrase = candidate
+            importedBackup = SpacechatBackup.object(from: contents)
             revealed = false
             localError = nil
             mode = .type
@@ -463,14 +548,21 @@ struct SpacechatPhraseView: View {
         }
     }
 
-    private func submit() {
+    private func submit(confirmed: Bool = false) {
         guard canSubmit else { return }
+        if mode == .recover && !confirmed { confirmRecovery = true; return }
         isWorking = true
         localError = nil
         Task {
-            let ok = await authState.signInWithSpacechat(phrase: phrase)
+            if mode == .recover {
+                do {
+                    _ = try await SpacechatAuth.request("account/recovery-claim", body: ["referenceId": referenceID.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(), "newPassphrase": SpacechatAuth.normalize(phrase)])
+                } catch { localError = error.localizedDescription; isWorking = false; return }
+            }
+            let ok = await authState.signInWithSpacechat(phrase: phrase, backup: importedBackup)
             isWorking = false
             if ok {
+                if mode == .recover { authState.needsPhraseBackup = true }
                 HapticsManager.shared.success()
                 onSignedIn()
                 dismiss()

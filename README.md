@@ -1,5 +1,7 @@
 # Spaces — Eat. Change. Evolve.
 
+Current native AI/workspace engineering notes: [native search, scale and validation](Documentation/Native-search-scale-validation.md). The original game-prototype description below is historical; current source also includes workspaces, agent teams, folder tools, AI conversations and messaging. Requested follow-ups, including the four-Dot app logo, are in [the work list](Documentation/TODO.md).
+
 A minimalist iOS game: you are always a dot. Explore a huge white space, eat
 icon-based collectibles, transform gradually toward whatever you eat most,
 complete forms, and unlock abilities. Built from `AI_Game_Master_Build_Prompt.md`

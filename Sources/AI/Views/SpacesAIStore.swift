@@ -54,6 +54,12 @@ final class SpacesAIStore: ObservableObject {
         if let data = try? JSONEncoder().encode(threads) { try? data.write(to: url, options: .atomic) }
     }
 
+    static func removeLocalAccountData(username: String) {
+        let local = SpacesAIStore()
+        local.configure(account: username)
+        if let url = local.fileURL { try? FileManager.default.removeItem(at: url) }
+    }
+
     func thread(_ id: String?) -> SpacesAIThread? { threads.first { $0.id == id } }
 
     func create() -> SpacesAIThread {

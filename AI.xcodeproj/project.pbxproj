@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A6F39E83A915403296BF2072 /* DotMapViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C96FD00EA5BD4A4F92E1A34A /* DotMapViewport.swift */; };
+		CDEBC00A52E0D562BCB24E4D /* AgentResponseValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39CB58D8415BB1E05787ACBD /* AgentResponseValidation.swift */; };
+		7DEBEAE9E95B7A6896089300 /* WorkspaceResearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B13A4D37893B518B88D0A91 /* WorkspaceResearch.swift */; };
 		E54C5EA4328D7A9510C571B2 /* AgentAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E54C5EA4328D7A9510C571A1 /* AgentAvatar.swift */; };
 		E58F8E5FD4AB700AF8B11DB2 /* AgentAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E58F8E5FD4AB700AF8B11DA1 /* AgentAccess.swift */; };
 		E5F621CAED4EDAA8E3D07EB2 /* FoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F621CAED4EDAA8E3D07EA1 /* FoldersView.swift */; };
@@ -73,6 +76,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		C96FD00EA5BD4A4F92E1A34A /* DotMapViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DotMapViewport.swift; sourceTree = "<group>"; };
+		39CB58D8415BB1E05787ACBD /* AgentResponseValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResponseValidation.swift; sourceTree = "<group>"; };
+		8B13A4D37893B518B88D0A91 /* WorkspaceResearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceResearch.swift; sourceTree = "<group>"; };
 		E54C5EA4328D7A9510C571A1 /* AgentAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAvatar.swift; sourceTree = "<group>"; };
 		E58F8E5FD4AB700AF8B11DA1 /* AgentAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAccess.swift; sourceTree = "<group>"; };
 		E5F621CAED4EDAA8E3D07EA1 /* FoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldersView.swift; sourceTree = "<group>"; };
@@ -303,6 +309,9 @@
 		D11B79C30359F6413200FFD4 /* Engine */ = {
 			isa = PBXGroup;
 			children = (
+				C96FD00EA5BD4A4F92E1A34A /* DotMapViewport.swift */,
+				39CB58D8415BB1E05787ACBD /* AgentResponseValidation.swift */,
+				8B13A4D37893B518B88D0A91 /* WorkspaceResearch.swift */,
 				A80660880642D81F396521FB /* GameEngine.swift */,
 				C4A0907DCEFB2FE0E7B5E242 /* TransformationEngine.swift */,
 			);
@@ -407,6 +416,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A6F39E83A915403296BF2072 /* DotMapViewport.swift in Sources */,
+				CDEBC00A52E0D562BCB24E4D /* AgentResponseValidation.swift in Sources */,
+				7DEBEAE9E95B7A6896089300 /* WorkspaceResearch.swift in Sources */,
 				10223755B3BB371A60C29E0E /* AIApp.swift in Sources */,
 				FF3E8DE83D7E148694E36D30 /* AudioManager.swift in Sources */,
 				D384B32AC1D483C111E31499 /* AuthState.swift in Sources */,
@@ -541,7 +553,7 @@
 				CODE_SIGN_ENTITLEMENTS = AI.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = SVDD93966K;
 				INFOPLIST_FILE = Sources/AI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -549,7 +561,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.5;
+				MARKETING_VERSION = 4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.husseinalaa.ai;
 				PRODUCT_NAME = "Space - Dots & AI";
 				SDKROOT = iphoneos;
@@ -624,7 +636,7 @@
 				CODE_SIGN_ENTITLEMENTS = AI.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = SVDD93966K;
 				INFOPLIST_FILE = Sources/AI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -632,7 +644,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.5;
+				MARKETING_VERSION = 4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.husseinalaa.ai;
 				PRODUCT_NAME = "Space - Dots & AI";
 				SDKROOT = iphoneos;

@@ -26,13 +26,15 @@ struct FileChange: Codable, Identifiable, Equatable {
 }
 
 enum FolderError: LocalizedError {
-    case unsafePath, tooLarge, notText, missing, exists
+    case unsafePath, tooLarge, notText, missing, exists, conflict, permissionChanged
     var errorDescription: String? {
         switch self {
         case .unsafePath: return "That path is outside the folder."
         case .tooLarge: return "That file is too large."
         case .notText: return "That file isn't text, so it can't be edited here."
         case .missing: return "That file or folder doesn't exist."
+        case .conflict: return "The file changed while the agent was working. Read it again before changing it."
+        case .permissionChanged: return "This agent no longer has permission to change files."
         case .exists: return "Something with that name is already there."
         }
     }
@@ -84,7 +86,20 @@ final class FolderStore: ObservableObject {
         guard !path.hasPrefix("/"), !path.split(separator: "/").contains(where: { $0 == ".." || $0.hasPrefix(".") }) else { return nil }
         let url = path.isEmpty ? base : base.appendingPathComponent(path).standardizedFileURL
         guard url.path == base.path || url.path.hasPrefix(base.path + "/") else { return nil }
+        let realRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        let realBase = base.resolvingSymlinksInPath(), realURL = url.resolvingSymlinksInPath()
+        guard realBase.path.hasPrefix(realRoot.path + "/"), realBase.path == base.path,
+              realURL.path == realBase.path || realURL.path.hasPrefix(realBase.path + "/") else { return nil }
         return url
+    }
+
+    func researchRoot(_ folder: String) -> URL? { resolve(folder, "") }
+    enum ExpectedContent { case unchecked; case matching(String?) }
+    private func checkExpected(_ expected: ExpectedContent, folder: String, path: String) throws {
+        if case .matching(let before) = expected {
+            let exists = exists(folder, path)
+            guard (before == nil && !exists) || (before != nil && read(folder,path) == before) else { throw FolderError.conflict }
+        }
     }
 
     // MARK: Adding
@@ -222,8 +237,9 @@ final class FolderStore: ObservableObject {
         func walk(_ dir: URL, prefix: String) {
             let items = ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey])) ?? [])
                 .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-            for item in items where out.count < 400 {
+            for item in items where out.count < 2_000 {
                 let name = item.lastPathComponent
+                if (try? item.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true { continue }
                 if name.hasPrefix(".") || Self.skipped.contains(name) { continue }
                 let values = try? item.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
                 let path = prefix.isEmpty ? name : prefix + "/" + name
@@ -255,9 +271,10 @@ final class FolderStore: ObservableObject {
 
     /// Creates or overwrites a text file. Returns the recorded change.
     @discardableResult
-    func write(_ folder: String, _ path: String, content: String, by: String) throws -> FileChange {
+    func write(_ folder: String, _ path: String, content: String, by: String, expected: ExpectedContent = .unchecked) throws -> FileChange {
         guard let url = resolve(folder, path), !path.isEmpty else { throw FolderError.unsafePath }
         guard content.utf8.count <= Self.maxFileBytes else { throw FolderError.tooLarge }
+        try checkExpected(expected, folder: folder, path: path)
         let existed = fm.fileExists(atPath: url.path)
         var before: String? = nil
         if existed {
@@ -272,9 +289,10 @@ final class FolderStore: ObservableObject {
     }
 
     @discardableResult
-    func delete(_ folder: String, _ path: String, by: String) throws -> FileChange {
+    func delete(_ folder: String, _ path: String, by: String, expected: ExpectedContent = .unchecked) throws -> FileChange {
         guard let url = resolve(folder, path), !path.isEmpty else { throw FolderError.unsafePath }
         guard fm.fileExists(atPath: url.path) else { throw FolderError.missing }
+        try checkExpected(expected, folder: folder, path: path)
         let before = read(folder, path)
         try fm.removeItem(at: url)
         let change = FileChange(folder: folder, path: path, kind: .deleted, before: before, after: nil, by: by)

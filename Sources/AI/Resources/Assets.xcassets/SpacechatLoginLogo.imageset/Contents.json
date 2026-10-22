@@ -1,0 +1,13 @@
+{
+  "images": [
+    {
+      "filename": "spacechat_logo_v2_128.png",
+      "idiom": "universal"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {}
+}
